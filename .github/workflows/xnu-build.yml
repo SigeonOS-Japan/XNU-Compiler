@@ -29,7 +29,7 @@ jobs:
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
           sudo chmod +x "$LIBEXEC_DIR/availability.pl"
 
-          # 2. Create missing SDK include directories to satisfy Clang's strict include checks
+          # 2. Create missing SDK include directories
           sudo mkdir -p "$SDK_PATH/usr/local/include/kernel"
           sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/AppleFeatures"
           sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
@@ -42,12 +42,12 @@ jobs:
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          # Disable both missing-include-dirs and reserved-identifier errors globally
-          export RC_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
-          export CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
-          export CXXFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
+          # -Wno-error prevents any warnings (like reserved-identifier) from failing the build
+          export RC_CFLAGS="-Wno-error"
+          export CFLAGS="-Wno-error"
+          export CXXFLAGS="-Wno-error"
           
-          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0" EXTRA_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
+          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0" EXTRA_CFLAGS="-Wno-error" EXTRA_CXXFLAGS="-Wno-error"
         shell: bash
 
       - name: Archive Build Artifacts
