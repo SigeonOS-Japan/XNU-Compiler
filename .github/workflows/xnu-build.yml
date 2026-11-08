@@ -15,7 +15,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure Xcode Toolchain
+      - name: Configure Xcode Toolchain and SDK Fixes
         run: |
           sudo xcode-select -s /Applications/Xcode.app
           echo "Selected Xcode version:"
@@ -23,20 +23,11 @@ jobs:
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           echo "SDK Path: $SDK_PATH"
           
-          # Fix for missing availability.pl in newer Xcode SDKs if building older XNU branches
+          # Create fallback mock for availability.pl safely
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
-          if [ ! -f "$LIBEXEC_DIR/availability.pl" ]; then
-            echo "Creating fallback mock for availability.pl..."
-            sudo mkdir -p "$LIBEXEC_DIR"
-            sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null << 'EOF'
-#!/usr/bin/env perl
-use strict;
-use warnings;
-# Fallback mock wrapper for modern SDKs
-1;
-EOF
-            sudo chmod +x "$LIBEXEC_DIR/availability.pl"
-          fi
+          sudo mkdir -p "$LIBEXEC_DIR"
+          printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
+          sudo chmod +x "$LIBEXEC_DIR/availability.pl"
         shell: bash
 
       - name: Clone Apple XNU Source
