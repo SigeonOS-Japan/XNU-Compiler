@@ -37,7 +37,10 @@ jobs:
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0"
+          # Disable missing include directory warnings turning into fatal errors
+          export CFLAGS="-Wno-error=missing-include-dirs"
+          export CXXFLAGS="-Wno-error=missing-include-dirs"
+          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0" EXTRA_CFLAGS="-Wno-error=missing-include-dirs"
         shell: bash
 
       - name: Archive Build Artifacts
