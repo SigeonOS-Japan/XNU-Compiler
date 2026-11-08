@@ -78,7 +78,7 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-      - name: Phase 2 - Build XNU Kernel Target (Verbose)
+      - name: Phase 2 - Build XNU Kernel Target (Bypass VMAPPLE)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -88,13 +88,13 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-          # Use -j1 and VERBOSE=YES to expose the exact bootstrap failure command
-          make -j1 SDKROOT=macosx \
+          # Force MACHINE_CONFIGS to empty/default to avoid VMApple proprietary hooks
+          make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=ARM64 \
+               MACHINE_CONFIGS="" \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$STUB_PATH/bin/clang" \
-               VERBOSE=YES \
                EXTRA_CFLAGS="-w" \
                EXTRA_CXXFLAGS="-w" \
                OTHER_CFLAGS="-w"
