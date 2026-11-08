@@ -1,39 +1,51 @@
-name: Build XNU Kernel
+name: XNU Build Pipeline
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
-  build:
+  build-xnu:
     runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
+      - name: Configure Xcode Toolchain
         run: |
           sudo xcode-select -s /Applications/Xcode.app
+          echo "Selected Xcode version:"
           xcodebuild -version
+          echo "SDK Path: $(xcrun --sdk macosx --show-sdk-path)"
 
-      - name: Clone XNU Source
+      - name: Clone Apple XNU Source
         run: |
-          git clone https://github.com/apple-oss-distributions/xnu.git xnu-source
+          git clone --depth=1 https://github.com/apple-oss-distributions/xnu.git xnu-source
 
-      - name: Build XNU
+      - name: Initialize Submodules (if required by version)
         run: |
           cd xnu-source
-          # Depending on the specific xnu version branch, build targets vary, 
-          # e.g., invoking standard make targets with the proper SDK root:
-          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE
+          if [ -f .gitmodules ]; then
+            git submodule update --init --recursive
+          fi
+
+      - name: Build XNU Kernel
+        run: |
+          cd xnu-source
+          # RC_DARWIN_KERNEL_VERSION explicitly satisfies the Makefile's version check
+          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0"
         shell: bash
 
-      - name: Upload Build Artifacts
+      - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xnu-kernel-binaries
+          name: xnu-kernel-artifacts
           path: |
             xnu-source/BUILD/**/*.kernel*
             xnu-source/BUILD/**/*.dSYM*
+            xnu-source/BUILD/**/*.map
+          if-no-files-found: warn
