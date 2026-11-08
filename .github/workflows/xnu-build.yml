@@ -43,9 +43,13 @@ jobs:
         run: |
           cd xnu-source
           
-          # 1. TrustCache Header Mock
-          mkdir -p osfmk/TrustCache BUILD/obj/EXPORT_HDRS/TrustCache
-          cat << 'EOF' > osfmk/TrustCache/API.h
+          # Create a centralized local include directory for all missing stubs
+          STUB_DIR="$PWD/custom_stubs"
+          mkdir -p "$STUB_DIR/TrustCache"
+          mkdir -p "$STUB_DIR/kern"
+
+          # 1. TrustCache/API.h Stub
+          cat << 'EOF' > "$STUB_DIR/TrustCache/API.h"
           #ifndef _TRUSTCACHE_API_H_
           #define _TRUSTCACHE_API_H_
           #include <stdint.h>
@@ -57,36 +61,40 @@ jobs:
           #define kTCEntryHashSize 20
           #endif
           EOF
-          cp osfmk/TrustCache/API.h BUILD/obj/EXPORT_HDRS/TrustCache/API.h
 
-          # 2. AppleFeatures Header Mock
-          mkdir -p osfmk/kern BUILD/obj/EXPORT_HDRS/kern
-          cat << 'EOF' > osfmk/kern/AppleFeatures.h
+          # 2. AppleFeatures.h Stub
+          cat << 'EOF' > "$STUB_DIR/AppleFeatures.h"
           #ifndef _APPLE_FEATURES_H_
           #define _APPLE_FEATURES_H_
           #define APPLE_FEATURE_DEFAULT 1
           #endif
           EOF
-          cp osfmk/kern/AppleFeatures.h BUILD/obj/EXPORT_HDRS/AppleFeatures.h
-          cp osfmk/kern/AppleFeatures.h BUILD/obj/EXPORT_HDRS/kern/AppleFeatures.h
+          cp "$STUB_DIR/AppleFeatures.h" "$STUB_DIR/kern/AppleFeatures.h"
+
+          # Also mirror into export header directories just in case
+          mkdir -p BUILD/obj/EXPORT_HDRS/TrustCache BUILD/obj/EXPORT_HDRS/kern
+          cp "$STUB_DIR/TrustCache/API.h" BUILD/obj/EXPORT_HDRS/TrustCache/API.h
+          cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/AppleFeatures.h
+          cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/kern/AppleFeatures.h
         shell: bash
 
       - name: Build XNU Kernel
         run: |
           cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
           
-          # Suppress all warnings/errors to push through compiler checks
-          export RC_CFLAGS="-w"
-          export CFLAGS="-w"
-          export CXXFLAGS="-w"
+          # Force Clang to include our custom stubs directory globally, and suppress warnings
+          export RC_CFLAGS="-w -I$STUB_PATH"
+          export CFLAGS="-w -I$STUB_PATH"
+          export CXXFLAGS="-w -I$STUB_PATH"
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="24.0.0" \
-               EXTRA_CFLAGS="-w" \
-               EXTRA_CXXFLAGS="-w" \
-               OTHER_CFLAGS="-w"
+               EXTRA_CFLAGS="-w -I$STUB_PATH" \
+               EXTRA_CXXFLAGS="-w -I$STUB_PATH" \
+               OTHER_CFLAGS="-w -I$STUB_PATH"
         shell: bash
 
       - name: Archive Build Artifacts
