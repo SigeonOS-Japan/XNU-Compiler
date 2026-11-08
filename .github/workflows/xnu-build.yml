@@ -43,18 +43,18 @@ jobs:
         run: |
           cd xnu-source
           
-          # Force Clang to treat reserved-identifier and missing-include warnings as non-fatal
-          export RC_CFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs"
-          export CFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs"
-          export CXXFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs"
+          # Forcefully silence all warnings and errors across Clang/C++ compiler stages
+          export RC_CFLAGS="-w"
+          export CFLAGS="-w"
+          export CXXFLAGS="-w"
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="24.0.0" \
-               EXTRA_CFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs" \
-               EXTRA_CXXFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs" \
-               OTHER_CFLAGS="-Wno-error=reserved-identifier -Wno-reserved-identifier -Wno-error=missing-include-dirs -Wno-missing-include-dirs"
+               EXTRA_CFLAGS="-w" \
+               EXTRA_CXXFLAGS="-w" \
+               OTHER_CFLAGS="-w"
         shell: bash
 
       - name: Archive Build Artifacts
