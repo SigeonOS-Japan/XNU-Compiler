@@ -23,16 +23,21 @@ jobs:
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           echo "SDK Path: $SDK_PATH"
           
-          # 1. Create fallback mock for availability.pl
+          # 1. 既存のダミーやモックの作成
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
           sudo chmod +x "$LIBEXEC_DIR/availability.pl"
 
-          # 2. Create missing SDK include directories
+          # 2. 不足するSDKインクルードディレクトリの作成
           sudo mkdir -p "$SDK_PATH/usr/local/include/kernel"
           sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/AppleFeatures"
           sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
+
+          # 3. 【追加】TrustCache/API.h の欠落を回避するためのダミーヘッダー生成
+          TRUSTCACHE_DIR="$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/TrustCache"
+          sudo mkdir -p "$TRUSTCACHE_DIR"
+          printf '#ifndef _TRUSTCACHE_API_H_\n#define _TRUSTCACHE_API_H_\n/* Dummy TrustCache API header */\ntypedef void * TrustCacheQueryToken_t;\n#endif\n' | sudo tee "$TRUSTCACHE_DIR/API.h" > /dev/null
         shell: bash
 
       - name: Clone Apple XNU Source
