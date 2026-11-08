@@ -84,7 +84,26 @@ jobs:
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
           
-          # Force Clang to include stubs and suppress strict warnings-as-errors
+          # Create a custom clang wrapper to strip out the deprecated auto-var flag
+          mkdir -p "$STUB_PATH/bin"
+          cat << 'EOF' > "$STUB_PATH/bin/clang"
+          #!/bin/bash
+          # Filter out the invalid argument
+          ARGS=("$@")
+          NEW_ARGS=()
+          for arg in "${ARGS[@]}"; do
+              if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
+                  NEW_ARGS+=("$arg")
+              fi
+          done
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang "${NEW_ARGS[@]}"
+          EOF
+          chmod +x "$STUB_PATH/bin/clang"
+          
+          # Put our wrapper at the front of the PATH
+          export PATH="$STUB_PATH/bin:$PATH"
+          
+          # Force Clang flags and suppress warnings
           export RC_CFLAGS="-w -I$STUB_PATH"
           export CFLAGS="-w -I$STUB_PATH"
           export CXXFLAGS="-w -I$STUB_PATH"
@@ -93,6 +112,7 @@ jobs:
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               CC="$STUB_PATH/bin/clang" \
                EXTRA_CFLAGS="-w -I$STUB_PATH" \
                EXTRA_CXXFLAGS="-w -I$STUB_PATH" \
                OTHER_CFLAGS="-w -I$STUB_PATH"
