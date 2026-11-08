@@ -1,4 +1,4 @@
-name: XNU Native Local Build Pipeline
+name: XNU Fixed Build Pipeline
 
 on:
   workflow_dispatch:
@@ -12,16 +12,13 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Xcode Toolchain
+      - name: Configure Xcode Toolchain and SDK Fixes
         run: |
-          sudo xcode-select -switch /Applications/Xcode.app
+          sudo xcode-select -s /Applications/Xcode.app
           xcodebuild -version
-          
-          # Create required perl stub if missing in SDK
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+          
+          # Create fallback mock for availability.pl script expected by build system
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
@@ -36,25 +33,81 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Phase 1 - Stage Export Headers (installhdrs)
+      - name: Setup Global Clang/CXX Wrapper
         run: |
           cd xnu-source
-          make SDKROOT=macosx ARCH_CONFIGS=X86_64 installhdrs
+          STUB_DIR="$PWD/custom_stubs"
+          mkdir -p "$STUB_DIR/bin"
+
+          # Create robust wrapper for both clang and clang++
+          cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
+          #!/bin/bash
+          ARGS=("$@")
+          NEW_ARGS=()
+          for arg in "${ARGS[@]}"; do
+              if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
+                  NEW_ARGS+=("$arg")
+              fi
+          done
+          # Determine if called as clang++ or clang
+          TOOL="clang"
+          if [[ "$(basename "$0")" == *"++"* ]]; then
+              TOOL="clang++"
+          fi
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL "${NEW_ARGS[@]}"
+          EOF
+          chmod +x "$STUB_DIR/bin/clang-wrapper"
+          
+          # Symlink both names
+          ln -sf clang-wrapper "$STUB_DIR/bin/clang"
+          ln -sf clang-wrapper "$STUB_DIR/bin/clang++"
         shell: bash
 
-      - name: Phase 2 - Compile Release Kernel Target
+      - name: Phase 1 - Stage and Install Export Headers
         run: |
           cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
+          export PATH="$STUB_PATH/bin:$PATH"
+          export CC="$STUB_PATH/bin/clang"
+          export CXX="$STUB_PATH/bin/clang++"
+          
+          make SDKROOT=macosx \
+               ARCH_CONFIGS=X86_64 \
+               CC="$CC" CXX="$CXX" \
+               installhdrs
+        shell: bash
+
+      - name: Phase 2 - Build XNU Kernel Target (Bypass Missing Include Errors)
+        run: |
+          cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
+          export PATH="$STUB_PATH/bin:$PATH"
+          export CC="$STUB_PATH/bin/clang"
+          export CXX="$STUB_PATH/bin/clang++"
+          
+          # Force creation of missing include paths to prevent -Wmissing-include-dirs crashes
+          mkdir -p BUILD/obj/EXPORT_HDRS/libsa
+          
+          # Disable -Werror globally via RC_CFLAGS and CFLAGS
+          export RC_CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
+          export CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
+          export CXXFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
+          
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
-               RC_DARWIN_KERNEL_VERSION="22.0.0"
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               CC="$CC" CXX="$CXX" \
+               RC_CFLAGS="$RC_CFLAGS" \
+               EXTRA_CFLAGS="$CFLAGS" \
+               EXTRA_CXXFLAGS="$CXXFLAGS" \
+               OTHER_CFLAGS="$CFLAGS"
         shell: bash
 
-      - name: Archive Kernel Artifacts
+      - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xnu-compiled-kernel
+          name: xnu-kernel-artifacts
           path: |
             xnu-source/BUILD/**/*.kernel*
             xnu-source/BUILD/**/*.dSYM*
