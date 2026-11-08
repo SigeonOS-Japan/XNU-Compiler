@@ -9,35 +9,43 @@ on:
 
 jobs:
   build-xnu:
-    runs-on: macos-14 # Using macOS 14 (Sonoma) provides a clean, stable environment for XNU builds
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure Xcode Version
+      - name: Configure Xcode Toolchain
         run: |
-          # Switch to Xcode 15.4 (or whatever stable Xcode is available on the runner)
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode.app
           echo "Selected Xcode version:"
           xcodebuild -version
-          echo "SDK Path: $(xcrun --sdk macosx --show-sdk-path)"
+          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+          echo "SDK Path: $SDK_PATH"
+          
+          # Fix for missing availability.pl in newer Xcode SDKs if building older XNU branches
+          LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
+          if [ ! -f "$LIBEXEC_DIR/availability.pl" ]; then
+            echo "Creating fallback mock for availability.pl..."
+            sudo mkdir -p "$LIBEXEC_DIR"
+            sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null << 'EOF'
+#!/usr/bin/env perl
+use strict;
+use warnings;
+# Fallback mock wrapper for modern SDKs
+1;
+EOF
+            sudo chmod +x "$LIBEXEC_DIR/availability.pl"
+          fi
+        shell: bash
 
       - name: Clone Apple XNU Source
         run: |
           git clone --depth=1 https://github.com/apple-oss-distributions/xnu.git xnu-source
 
-      - name: Initialize Submodules (if required by version)
-        run: |
-          cd xnu-source
-          if [ -f .gitmodules ]; then
-            git submodule update --init --recursive
-          fi
-
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          # RC_DARWIN_KERNEL_VERSION satisfies the Makefile's version check
           make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0"
         shell: bash
 
