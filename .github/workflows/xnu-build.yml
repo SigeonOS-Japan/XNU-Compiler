@@ -1,4 +1,4 @@
-name: XNU Build Pipeline
+name: XNU Build Pipeline (Ventura Stable)
 
 on:
   workflow_dispatch:
@@ -35,15 +35,16 @@ jobs:
           sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
         shell: bash
 
-      - name: Clone Apple XNU Source
+      - name: Clone Apple XNU Source (Ventura Branch)
         run: |
-          git clone --depth=1 https://github.com/apple-oss-distributions/xnu.git xnu-source
+          # Check out a stable pre-exclaves release branch (e.g., xnu-8792 / macOS 13 Ventura)
+          git clone --depth=1 --branch xnu-8792.41.9 https://github.com/apple-oss-distributions/xnu.git xnu-source
+        shell: bash
 
-      - name: Inject Missing Private Headers
+      - name: Inject Missing Private Headers & Stubs
         run: |
           cd xnu-source
           
-          # Create a centralized local include directory for all missing stubs
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/TrustCache"
           mkdir -p "$STUB_DIR/kern"
@@ -71,28 +72,27 @@ jobs:
           EOF
           cp "$STUB_DIR/AppleFeatures.h" "$STUB_DIR/kern/AppleFeatures.h"
 
-          # Also mirror into export header directories just in case
+          # Mirror into export header directories
           mkdir -p BUILD/obj/EXPORT_HDRS/TrustCache BUILD/obj/EXPORT_HDRS/kern
           cp "$STUB_DIR/TrustCache/API.h" BUILD/obj/EXPORT_HDRS/TrustCache/API.h
           cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/AppleFeatures.h
           cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/kern/AppleFeatures.h
         shell: bash
 
-      - name: Build XNU Kernel (Verbose)
+      - name: Build XNU Kernel
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
           
+          # Force Clang to include stubs and suppress strict warnings-as-errors
           export RC_CFLAGS="-w -I$STUB_PATH"
           export CFLAGS="-w -I$STUB_PATH"
           export CXXFLAGS="-w -I$STUB_PATH"
           
-          # Use -j1 to prevent log scrambling and force verbose output
-          make -j1 SDKROOT=macosx \
+          make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
-               RC_DARWIN_KERNEL_VERSION="24.0.0" \
-               VERBOSE=YES \
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
                EXTRA_CFLAGS="-w -I$STUB_PATH" \
                EXTRA_CXXFLAGS="-w -I$STUB_PATH" \
                OTHER_CFLAGS="-w -I$STUB_PATH"
