@@ -42,11 +42,12 @@ jobs:
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          export RC_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
-          export CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
-          export CXXFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
+          # Disable both missing-include-dirs and reserved-identifier errors globally
+          export RC_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
+          export CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
+          export CXXFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
           
-          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0" EXTRA_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
+          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0" EXTRA_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs -Wno-error=reserved-identifier -Wno-reserved-identifier"
         shell: bash
 
       - name: Archive Build Artifacts
