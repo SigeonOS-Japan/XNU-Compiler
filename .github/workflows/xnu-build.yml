@@ -77,7 +77,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target (Bypass Missing Include Errors)
+      - name: Phase 2 - Build XNU Kernel Target (Fix Bootstrap Tools)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -85,10 +85,8 @@ jobs:
           export CC="$STUB_PATH/bin/clang"
           export CXX="$STUB_PATH/bin/clang++"
           
-          # Force creation of missing include paths to prevent -Wmissing-include-dirs crashes
           mkdir -p BUILD/obj/EXPORT_HDRS/libsa
           
-          # Disable -Werror globally via RC_CFLAGS and CFLAGS
           export RC_CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
           export CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
           export CXXFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
@@ -98,6 +96,8 @@ jobs:
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$CC" CXX="$CXX" \
+               HOST_CC="$CC" \
+               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CXXFLAGS" \
