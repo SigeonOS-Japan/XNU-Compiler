@@ -9,15 +9,16 @@ on:
 
 jobs:
   build-xnu:
-    runs-on: macos-latest
+    runs-on: macos-14 # Using macOS 14 (Sonoma) provides a clean, stable environment for XNU builds
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure Xcode Toolchain
+      - name: Configure Xcode Version
         run: |
-          sudo xcode-select -s /Applications/Xcode.app
+          # Switch to Xcode 15.4 (or whatever stable Xcode is available on the runner)
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
           echo "Selected Xcode version:"
           xcodebuild -version
           echo "SDK Path: $(xcrun --sdk macosx --show-sdk-path)"
@@ -36,7 +37,7 @@ jobs:
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          # RC_DARWIN_KERNEL_VERSION explicitly satisfies the Makefile's version check
+          # RC_DARWIN_KERNEL_VERSION satisfies the Makefile's version check
           make SDKROOT=macosx KERNEL_CONFIGS=RELEASE ARCH_CONFIGS=X86_64 RC_DARWIN_KERNEL_VERSION="24.0.0"
         shell: bash
 
