@@ -78,11 +78,23 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-          make SDKROOT=macosx \
+      - name: Phase 2 - Build XNU Kernel Target (Verbose)
+        run: |
+          cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
+          export PATH="$STUB_PATH/bin:$PATH"
+          
+          export RC_CFLAGS="-w"
+          export CFLAGS="-w"
+          export CXXFLAGS="-w"
+          
+          # Use -j1 and VERBOSE=YES to expose the exact bootstrap failure command
+          make -j1 SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=ARM64 \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$STUB_PATH/bin/clang" \
+               VERBOSE=YES \
                EXTRA_CFLAGS="-w" \
                EXTRA_CXXFLAGS="-w" \
                OTHER_CFLAGS="-w"
