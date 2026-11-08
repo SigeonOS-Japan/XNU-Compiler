@@ -78,20 +78,21 @@ jobs:
           cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/kern/AppleFeatures.h
         shell: bash
 
-      - name: Build XNU Kernel
+      - name: Build XNU Kernel (Verbose)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
           
-          # Force Clang to include our custom stubs directory globally, and suppress warnings
           export RC_CFLAGS="-w -I$STUB_PATH"
           export CFLAGS="-w -I$STUB_PATH"
           export CXXFLAGS="-w -I$STUB_PATH"
           
-          make SDKROOT=macosx \
+          # Use -j1 to prevent log scrambling and force verbose output
+          make -j1 SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="24.0.0" \
+               VERBOSE=YES \
                EXTRA_CFLAGS="-w -I$STUB_PATH" \
                EXTRA_CXXFLAGS="-w -I$STUB_PATH" \
                OTHER_CFLAGS="-w -I$STUB_PATH"
