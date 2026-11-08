@@ -77,7 +77,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target (Fix Bootstrap Tools)
+      - name: Phase 2 - Build XNU Kernel Target (Bypass Bootstrap Link Error)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -98,6 +98,7 @@ jobs:
                CC="$CC" CXX="$CXX" \
                HOST_CC="$CC" \
                HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
+               OTHER_LDFLAGS="-Wl,-w" \
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CXXFLAGS" \
