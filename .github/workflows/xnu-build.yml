@@ -1,4 +1,4 @@
-name: XNU Build Pipeline (Ventura Stable)
+name: XNU Build Pipeline (Ventura Intel Native)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,8 @@ on:
 
 jobs:
   build-xnu:
-    runs-on: macos-latest
+    # Use Intel macOS 13 runner to natively match X86_64 target and avoid host-tool mismatch
+    runs-on: macos-13
 
     steps:
       - name: Checkout Repository
@@ -37,17 +38,17 @@ jobs:
 
       - name: Clone Apple XNU Source (Ventura Branch)
         run: |
-          # Check out a stable pre-exclaves release branch (e.g., xnu-8792 / macOS 13 Ventura)
           git clone --depth=1 --branch xnu-8792.41.9 https://github.com/apple-oss-distributions/xnu.git xnu-source
         shell: bash
 
-      - name: Inject Missing Private Headers & Stubs
+      - name: Inject Missing Private Headers & Clang Wrapper
         run: |
           cd xnu-source
           
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/TrustCache"
           mkdir -p "$STUB_DIR/kern"
+          mkdir -p "$STUB_DIR/bin"
 
           # 1. TrustCache/API.h Stub
           cat << 'EOF' > "$STUB_DIR/TrustCache/API.h"
@@ -77,18 +78,10 @@ jobs:
           cp "$STUB_DIR/TrustCache/API.h" BUILD/obj/EXPORT_HDRS/TrustCache/API.h
           cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/AppleFeatures.h
           cp "$STUB_DIR/AppleFeatures.h" BUILD/obj/EXPORT_HDRS/kern/AppleFeatures.h
-        shell: bash
 
-      - name: Build XNU Kernel
-        run: |
-          cd xnu-source
-          STUB_PATH="$PWD/custom_stubs"
-          
-          # Create a custom clang wrapper to strip out the deprecated auto-var flag
-          mkdir -p "$STUB_PATH/bin"
-          cat << 'EOF' > "$STUB_PATH/bin/clang"
+          # 3. Create Clang Wrapper to filter obsolete auto-var flag
+          cat << 'EOF' > "$STUB_DIR/bin/clang"
           #!/bin/bash
-          # Filter out the invalid argument
           ARGS=("$@")
           NEW_ARGS=()
           for arg in "${ARGS[@]}"; do
@@ -98,12 +91,15 @@ jobs:
           done
           exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang "${NEW_ARGS[@]}"
           EOF
-          chmod +x "$STUB_PATH/bin/clang"
-          
-          # Put our wrapper at the front of the PATH
+          chmod +x "$STUB_DIR/bin/clang"
+        shell: bash
+
+      - name: Build XNU Kernel
+        run: |
+          cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
           export PATH="$STUB_PATH/bin:$PATH"
           
-          # Force Clang flags and suppress warnings
           export RC_CFLAGS="-w -I$STUB_PATH"
           export CFLAGS="-w -I$STUB_PATH"
           export CXXFLAGS="-w -I$STUB_PATH"
