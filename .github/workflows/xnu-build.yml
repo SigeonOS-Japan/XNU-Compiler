@@ -1,0 +1,39 @@
+name: Build XNU Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Clone XNU Source
+        run: |
+          git clone https://github.com/apple-oss-distributions/xnu.git xnu-source
+
+      - name: Build XNU
+        run: |
+          cd xnu-source
+          # Depending on the specific xnu version branch, build targets vary, 
+          # e.g., invoking standard make targets with the proper SDK root:
+          make SDKROOT=macosx KERNEL_CONFIGS=RELEASE
+        shell: bash
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnu-kernel-binaries
+          path: |
+            xnu-source/BUILD/**/*.kernel*
+            xnu-source/BUILD/**/*.dSYM*
