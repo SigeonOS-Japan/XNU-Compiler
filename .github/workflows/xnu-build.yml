@@ -1,4 +1,4 @@
-name: XNU Two-Phase Build Pipeline
+name: XNU Native ARM64 Build Pipeline
 
 on:
   workflow_dispatch:
@@ -8,91 +8,92 @@ on:
     branches: [ main, master ]
 
 jobs:
-    build-xnu:
-      runs-on: macos-latest
-  
-      steps:
-        - name: Configure Xcode Toolchain and SDK Fixes
-          run: |
-            sudo xcode-select -s /Applications/Xcode.app
-            echo "Selected Xcode version:"
-            xcodebuild -version
-            SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
-            echo "SDK Path: $SDK_PATH"
-            
-            # Create fallback mock for availability.pl script expected by build system
-            LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
-            sudo mkdir -p "$LIBEXEC_DIR"
-            printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
-            sudo chmod +x "$LIBEXEC_DIR/availability.pl"
-          shell: bash
-  
-        - name: Clone Apple XNU Source (Ventura Branch)
-          run: |
-            git clone --depth=1 --branch xnu-8792.41.9 https://github.com/apple-oss-distributions/xnu.git xnu-source
-          shell: bash
-  
-        - name: Setup Clang Wrapper & Environment
-          run: |
-            cd xnu-source
-            STUB_DIR="$PWD/custom_stubs"
-            mkdir -p "$STUB_DIR/bin"
-  
-            # Create Clang wrapper to strip out the deprecated auto-var flag introduced in newer toolchains
-            cat << 'EOF' > "$STUB_DIR/bin/clang"
-            #!/bin/bash
-            ARGS=("$@")
-            NEW_ARGS=()
-            for arg in "${ARGS[@]}"; do
-                if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
-                    NEW_ARGS+=("$arg")
-                fi
-            done
-            exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang "${NEW_ARGS[@]}"
-            EOF
-            chmod +x "$STUB_DIR/bin/clang"
-          shell: bash
-  
-        - name: Phase 1 - Stage and Install Export Headers
-          run: |
-            cd xnu-source
-            STUB_PATH="$PWD/custom_stubs"
-            export PATH="$STUB_PATH/bin:$PATH"
-            
-            # Phase 1: Let the build system automatically generate and stage all missing export headers
-            make SDKROOT=macosx \
-                 ARCH_CONFIGS=X86_64 \
-                 CC="$STUB_PATH/bin/clang" \
-                 installhdrs
-          shell: bash
-  
-        - name: Phase 2 - Build XNU Kernel Target
-          run: |
-            cd xnu-source
-            STUB_PATH="$PWD/custom_stubs"
-            export PATH="$STUB_PATH/bin:$PATH"
-            
-            # Suppress warnings and execute compilation with staged headers ready
-            export RC_CFLAGS="-w"
-            export CFLAGS="-w"
-            export CXXFLAGS="-w"
-            
-            make SDKROOT=macosx \
-                 KERNEL_CONFIGS=RELEASE \
-                 ARCH_CONFIGS=X86_64 \
-                 RC_DARWIN_KERNEL_VERSION="22.0.0" \
-                 CC="$STUB_PATH/bin/clang" \
-                 EXTRA_CFLAGS="-w" \
-                 EXTRA_CXXFLAGS="-w" \
-                 OTHER_CFLAGS="-w"
-          shell: bash
-  
-        - name: Archive Build Artifacts
-          uses: actions/upload-artifact@v4
-          with:
-            name: xnu-kernel-artifacts
-            path: |
-              xnu-source/BUILD/**/*.kernel*
-              xnu-source/BUILD/**/*.dSYM*
-              xnu-source/BUILD/**/*.map
-            if-no-files-found: warn
+  build-xnu:
+    runs-on: macos-latest
+
+    steps:
+      - name: Configure Xcode Toolchain and SDK Fixes
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          echo "Selected Xcode version:"
+          xcodebuild -version
+          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+          echo "SDK Path: $SDK_PATH"
+          
+          # Create fallback mock for availability.pl script expected by build system
+          LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
+          sudo mkdir -p "$LIBEXEC_DIR"
+          printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
+          sudo chmod +x "$LIBEXEC_DIR/availability.pl"
+        shell: bash
+
+      - name: Clone Apple XNU Source (Ventura Tag)
+        run: |
+          git clone --depth=1 https://github.com/apple-oss-distributions/xnu.git xnu-source
+          cd xnu-source
+          git fetch origin tag xnu-8792.41.9 --depth=1
+          git checkout xnu-8792.41.9
+        shell: bash
+
+      - name: Setup Clang Wrapper & Environment
+        run: |
+          cd xnu-source
+          STUB_DIR="$PWD/custom_stubs"
+          mkdir -p "$STUB_DIR/bin"
+
+          # Create Clang wrapper to strip out the deprecated auto-var flag introduced in newer toolchains
+          cat << 'EOF' > "$STUB_DIR/bin/clang"
+          #!/bin/bash
+          ARGS=("$@")
+          NEW_ARGS=()
+          for arg in "${ARGS[@]}"; do
+              if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
+                  NEW_ARGS+=("$arg")
+              fi
+          done
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang "${NEW_ARGS[@]}"
+          EOF
+          chmod +x "$STUB_DIR/bin/clang"
+        shell: bash
+
+      - name: Phase 1 - Stage and Install Export Headers (ARM64)
+        run: |
+          cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
+          export PATH="$STUB_PATH/bin:$PATH"
+          
+          make SDKROOT=macosx \
+               ARCH_CONFIGS=ARM64 \
+               CC="$STUB_PATH/bin/clang" \
+               installhdrs
+        shell: bash
+
+      - name: Phase 2 - Build XNU Kernel Target (ARM64)
+        run: |
+          cd xnu-source
+          STUB_PATH="$PWD/custom_stubs"
+          export PATH="$STUB_PATH/bin:$PATH"
+          
+          export RC_CFLAGS="-w"
+          export CFLAGS="-w"
+          export CXXFLAGS="-w"
+          
+          make SDKROOT=macosx \
+               KERNEL_CONFIGS=RELEASE \
+               ARCH_CONFIGS=ARM64 \
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               CC="$STUB_PATH/bin/clang" \
+               EXTRA_CFLAGS="-w" \
+               EXTRA_CXXFLAGS="-w" \
+               OTHER_CFLAGS="-w"
+        shell: bash
+
+      - name: Archive Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnu-kernel-artifacts-arm64
+          path: |
+            xnu-source/BUILD/**/*.kernel*
+            xnu-source/BUILD/**/*.dSYM*
+            xnu-source/BUILD/**/*.map
+          if-no-files-found: warn
