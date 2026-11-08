@@ -1,4 +1,4 @@
-name: XNU Native ARM64 Build Pipeline
+name: XNU X86_64 Cross-Build with Rosetta
 
 on:
   workflow_dispatch:
@@ -12,15 +12,15 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Configure Xcode Toolchain and SDK Fixes
+      - name: Configure Xcode & Enable Rosetta 2
         run: |
           sudo xcode-select -s /Applications/Xcode.app
-          echo "Selected Xcode version:"
           xcodebuild -version
-          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
-          echo "SDK Path: $SDK_PATH"
           
-          # Create fallback mock for availability.pl script expected by build system
+          # Enable Rosetta 2 for running x86_64 host tools on ARM64 runner
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          
+          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
@@ -35,13 +35,12 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Setup Clang Wrapper & Environment
+      - name: Setup Clang Wrapper
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/bin"
 
-          # Create Clang wrapper to strip out the deprecated auto-var flag introduced in newer toolchains
           cat << 'EOF' > "$STUB_DIR/bin/clang"
           #!/bin/bash
           ARGS=("$@")
@@ -56,19 +55,19 @@ jobs:
           chmod +x "$STUB_DIR/bin/clang"
         shell: bash
 
-      - name: Phase 1 - Stage and Install Export Headers (ARM64)
+      - name: Phase 1 - Stage Headers (X86_64)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
           export PATH="$STUB_PATH/bin:$PATH"
           
           make SDKROOT=macosx \
-               ARCH_CONFIGS=ARM64 \
+               ARCH_CONFIGS=X86_64 \
                CC="$STUB_PATH/bin/clang" \
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target (ARM64)
+      - name: Phase 2 - Build Kernel Target (X86_64)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -78,21 +77,9 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-      - name: Phase 2 - Build XNU Kernel Target (ARM64 Default)
-        run: |
-          cd xnu-source
-          STUB_PATH="$PWD/custom_stubs"
-          export PATH="$STUB_PATH/bin:$PATH"
-          
-          export RC_CFLAGS="-w"
-          export CFLAGS="-w"
-          export CXXFLAGS="-w"
-          
-          # Use DEFAULT machine configuration for physical ARM64 targets
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
-               ARCH_CONFIGS=ARM64 \
-               MACHINE_CONFIGS=DEFAULT \
+               ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$STUB_PATH/bin/clang" \
                EXTRA_CFLAGS="-w" \
@@ -103,7 +90,7 @@ jobs:
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xnu-kernel-artifacts-arm64
+          name: xnu-kernel-x86_64
           path: |
             xnu-source/BUILD/**/*.kernel*
             xnu-source/BUILD/**/*.dSYM*
