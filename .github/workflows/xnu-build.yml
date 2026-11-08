@@ -23,11 +23,16 @@ jobs:
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           echo "SDK Path: $SDK_PATH"
           
-          # Create fallback mock for availability.pl safely
+          # 1. Create fallback mock for availability.pl
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
           sudo chmod +x "$LIBEXEC_DIR/availability.pl"
+
+          # 2. Create missing SDK include directories to satisfy Clang's strict include checks
+          sudo mkdir -p "$SDK_PATH/usr/local/include/kernel"
+          sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/AppleFeatures"
+          sudo mkdir -p "$SDK_PATH/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
         shell: bash
 
       - name: Clone Apple XNU Source
@@ -37,7 +42,6 @@ jobs:
       - name: Build XNU Kernel
         run: |
           cd xnu-source
-          # Forcefully disable missing include directory warnings across all compiler wrappers
           export RC_CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
           export CFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
           export CXXFLAGS="-Wno-error=missing-include-dirs -Wno-missing-include-dirs"
