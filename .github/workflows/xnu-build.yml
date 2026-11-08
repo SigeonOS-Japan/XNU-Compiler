@@ -44,6 +44,18 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/apple-oss-distributions/xnu.git xnu-source
 
+      - name: Inject Missing TrustCache Header
+        run: |
+          cd xnu-source
+          # 確実にインクルードパスに含まれる osfmk フォルダ内に TrustCache ディレクトリを作成して配置
+          mkdir -p osfmk/TrustCache
+          printf '#ifndef _TRUSTCACHE_API_H_\n#define _TRUSTCACHE_API_H_\ntypedef void * TrustCacheQueryToken_t;\n#endif\n' > osfmk/TrustCache/API.h
+          
+          # 念のためインクルードパスのルートになりそうな場所にも同じものを配置
+          mkdir -p BUILD/obj/EXPORT_HDRS/TrustCache
+          printf '#ifndef _TRUSTCACHE_API_H_\n#define _TRUSTCACHE_API_H_\ntypedef void * TrustCacheQueryToken_t;\n#endif\n' > BUILD/obj/EXPORT_HDRS/TrustCache/API.h
+        shell: bash
+
       - name: Build XNU Kernel
         run: |
           cd xnu-source
