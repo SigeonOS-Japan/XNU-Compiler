@@ -78,7 +78,7 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-      - name: Phase 2 - Build XNU Kernel Target (Bypass VMAPPLE)
+      - name: Phase 2 - Build XNU Kernel Target (ARM64 Default)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -88,11 +88,11 @@ jobs:
           export CFLAGS="-w"
           export CXXFLAGS="-w"
           
-          # Force MACHINE_CONFIGS to empty/default to avoid VMApple proprietary hooks
+          # Use DEFAULT machine configuration for physical ARM64 targets
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=ARM64 \
-               MACHINE_CONFIGS="" \
+               MACHINE_CONFIGS=DEFAULT \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$STUB_PATH/bin/clang" \
                EXTRA_CFLAGS="-w" \
