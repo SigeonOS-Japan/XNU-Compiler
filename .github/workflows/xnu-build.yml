@@ -42,8 +42,8 @@ jobs:
           # 1. Remove all kernelContent occurrences from any source or generated output
           find . -type f \( -name "*.iig" -o -name "*.cpp" -o -name "*.h" -o -name "*.c" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
           
-          # 2. Fix uio_stackbuf_t alignment sizing in vfs files by casting or casting array types
-          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c security/mac_vfs_subr.c || true
+          # 2. Fix uio_stackbuf_t alignment sizing in vfs files and security lookups
+          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c bsd/vfs/vfs_lookup.c security/mac_vfs_subr.c || true
         shell: bash
 
       - name: Setup Global Clang/CXX Wrapper and Missing Headers
@@ -96,7 +96,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target Directly
+      - name: Phase 2 - Build XNU Kernel Targets
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -110,8 +110,11 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
-          # Directly target the compiled config directory instead of root bootstrap
-          make -C BUILD/obj/RELEASE/X86_64 SDKROOT=macosx \
+          # 1. Run setup to generate configuration build directories
+          make SDKROOT=macosx \
+               KERNEL_CONFIGS=RELEASE \
+               ARCH_CONFIGS=X86_64 \
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$CC" CXX="$CXX" \
                HOST_CC="$CC" \
                HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
@@ -119,11 +122,11 @@ jobs:
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
-               OTHER_CFLAGS="$CFLAGS" || \
-          make SDKROOT=macosx \
-               KERNEL_CONFIGS=RELEASE \
-               ARCH_CONFIGS=X86_64 \
-               RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               OTHER_CFLAGS="$CFLAGS" \
+               setup
+
+          # 2. Build directly inside the generated sub-make context to skip the wrapper
+          make -C BUILD/obj/RELEASE/X86_64 SDKROOT=macosx \
                CC="$CC" CXX="$CXX" \
                HOST_CC="$CC" \
                HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
