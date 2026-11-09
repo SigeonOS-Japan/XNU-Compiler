@@ -125,8 +125,6 @@ jobs:
           void *__os_log_internal_driverKit = NULL;
           char *__aslbufp = NULL;
           char *__msgbufp = NULL;
-          _Bool startup_serial_logging_active = 0;
-          uint64_t startup_serial_num_procs = 0;
 
           void __dummy_firehose(void) {}
           void _firehose_trace_metadata(void) {}
