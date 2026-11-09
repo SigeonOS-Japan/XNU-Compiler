@@ -123,7 +123,10 @@ jobs:
           export PATH="$STUB_PATH/bin:$PATH"
           export CC="$STUB_PATH/bin/clang"
           export CXX="$STUB_PATH/bin/clang++"
-          mkdir -p BUILD/obj/EXPORT_HDRS/libsa
+          
+          # Pre-create output directory and place libfirehose_kernel.a where the linker searches
+          mkdir -p BUILD/obj/RELEASE_X86_64
+          cp "$STUB_PATH/lib/libfirehose_kernel.a" BUILD/obj/RELEASE_X86_64/
           
           STUB_INC="$STUB_PATH/include"
           STUB_LIB="$STUB_PATH/lib"
