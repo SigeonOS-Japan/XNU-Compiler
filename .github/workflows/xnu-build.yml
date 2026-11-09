@@ -84,7 +84,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target
+      - name: Phase 2 - Build XNU Kernel Target (Bypass Bootstrap Wrapper)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -109,9 +109,10 @@ jobs:
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CXXFLAGS" \
-               OTHER_CFLAGS="$CFLAGS"
+               OTHER_CFLAGS="$CFLAGS" \
+               build_all
         shell: bash
-
+        
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
