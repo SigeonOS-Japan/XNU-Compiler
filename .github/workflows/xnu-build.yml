@@ -35,19 +35,54 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Setup Stub Headers, Dummy Libraries, and Neutralize Log Files
+      - name: Setup Comprehensive Stub Headers and Symbol Implementations
         run: |
           cd xnu-source
           
-          # Create global include and library directories for stubs
+          # Create stub directories
           mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib
           
+          # 1. Comprehensive kernel stub header
+          cat << 'EOF' > custom_stubs/include/kernel_stubs.h
+          #ifndef __KERNEL_STUBS_H__
+          #define __KERNEL_STUBS_H__
+
+          #include <stdint.h>
+          #include <stddef.h>
+
+          #define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT 2
+          #define FIREHOSE_CHUNK_SIZE 4096
+
+          typedef struct firehose_tracepoint_s * firehose_tracepoint_t;
+          typedef uint64_t firehose_tracepoint_id_u;
+          typedef void* firehose_chunk_t;
+
+          #ifdef __cplusplus
+          extern "C" {
+          #endif
+
+          extern void *__os_log_default;
+          extern void *__os_log_internal;
+          extern void *__os_log_internal_driverKit;
+          extern char *__aslbufp;
+          extern char *__msgbufp;
+          extern int startup_serial_logging_active;
+          extern int startup_serial_num_procs;
+
+          void __dummy_firehose(void);
+
+          #ifdef __cplusplus
+          }
+          #endif
+
+          #endif
+          EOF
+
+          # 2. Firehose specific headers
           cat << 'EOF' > custom_stubs/include/os/firehose_buffer_private.h
           #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
           #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          #define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT 2
-          #define FIREHOSE_CHUNK_SIZE 4096
-          typedef struct firehose_tracepoint_s * firehose_tracepoint_t;
+          #include <kernel_stubs.h>
           static inline firehose_tracepoint_t __firehose_buffer_tracepoint_reserve(uint64_t a, uint32_t b, uint16_t c, uint32_t d, void *e) { return 0; }
           static inline void __firehose_buffer_tracepoint_flush(firehose_tracepoint_t a, uint64_t b) {}
           static inline int firehose_chunk_tracepoint_try_reserve(void *a, uint64_t b, uint32_t c, uint16_t d, uint32_t e, void *f) { return 0; }
@@ -59,25 +94,52 @@ jobs:
           cat << 'EOF' > custom_stubs/include/firehose/chunk_private.h
           #ifndef __FIREHOSE_CHUNK_PRIVATE_H__
           #define __FIREHOSE_CHUNK_PRIVATE_H__
-          typedef void* firehose_chunk_t;
+          #include <kernel_stubs.h>
           #endif
           EOF
 
-          # Build a dummy libfirehose_kernel.a archive to satisfy the linker
-          echo "void __dummy_firehose(void) {}" > custom_stubs/lib/dummy.c
-          clang -c custom_stubs/lib/dummy.c -o custom_stubs/lib/dummy.o
-          ar rcs custom_stubs/lib/libfirehose_kernel.a custom_stubs/lib/dummy.o
-          rm custom_stubs/lib/dummy.c custom_stubs/lib/dummy.o
+          # 3. Implement missing global symbols to satisfy the linker
+          cat << 'EOF' > custom_stubs/lib/stubs_impl.c
+          #include <kernel_stubs.h>
 
-          # Truncate problematic log source files to clean empty units
-          echo "/* stubbed log */" > libkern/os/log.c
-          echo "/* stubbed subr_log */" > bsd/kern/subr_log.c
+          void *__os_log_default = NULL;
+          void *__os_log_internal = NULL;
+          void *__os_log_internal_driverKit = NULL;
+          char *__aslbufp = NULL;
+          char *__msgbufp = NULL;
+          int startup_serial_logging_active = 0;
+          int startup_serial_num_procs = 0;
+
+          void __dummy_firehose(void) {}
+          void _firehose_trace_metadata(void) {}
+          void _log_dmesg(void) {}
+          void _log_payload_send(void) {}
+          void _log_putc(void) {}
+          void _log_putc_locked(void) {}
+          void _logclose(void) {}
+          void _logioctl(void) {}
+          void _logopen(void) {}
+          void _logread(void) {}
+          void _logselect(void) {}
+          void _logwakeup(void) {}
+          void _os_log_create(void) {}
+          void _os_log_disabled(void) {}
+          void _os_log_with_args(void) {}
+          void _oslogclose(void) {}
+          void _oslogioctl(void) {}
+          void _oslogopen(void) {}
+          void _oslogselect(void) {}
+          EOF
+
+          clang -c custom_stubs/lib/stubs_impl.c -o custom_stubs/lib/stubs_impl.o
+          ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
+          rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
           # Fix uio alignments across C files
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper and IIG Fixes
+      - name: Setup Global Clang/CXX Wrapper
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
@@ -86,7 +148,7 @@ jobs:
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-          LIB_PATH="$SCRIPT_DIR/lib/libfirehose_kernel.a"
+          STUB_LIB="$SCRIPT_DIR/lib/libcustom_stubs.a"
           
           ARGS=("$@")
           NEW_ARGS=()
@@ -94,19 +156,12 @@ jobs:
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
               fi
-              if [[ "$arg" == *.iig.cpp ]]; then
-                  echo "/* stubbed iig */" > "$arg"
-              fi
-              if [ "$arg" = "-lfirehose_kernel" ]; then
-                  NEW_ARGS+=("$LIB_PATH")
-                  continue
-              fi
           done
           TOOL="clang"
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -I"$SCRIPT_DIR/include" -L"$SCRIPT_DIR/lib" "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang"
@@ -133,10 +188,9 @@ jobs:
           
           STUB_INC="$STUB_PATH/include"
           STUB_LIB="$STUB_PATH/lib"
-          export RC_CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
-          export CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
-          export CXXFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
-          export LDFLAGS="-L$STUB_LIB"
+          export RC_CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
+          export CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
+          export CXXFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
@@ -144,7 +198,7 @@ jobs:
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$CC" CXX="$CXX" \
                HOST_CC="$CC" \
-               HOST_CFLAGS="-std=gnu89 -w -Wno-error -I$STUB_INC" \
+               HOST_CFLAGS="-std=gnu89 -w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC" \
                BUILD_WERROR=0 \
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
