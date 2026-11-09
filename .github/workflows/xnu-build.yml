@@ -21,7 +21,7 @@ jobs:
           xcodebuild -version
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           
-          # Create fallback mock for availability.pl script expected by build system
+          # Opret fallback mock til availability.pl script
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
@@ -36,24 +36,21 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Patch Incompatibilities (DriverKit, Alignments, & kernelContent)
+      - name: Patch Incompatibilities and Global Alignments
         run: |
           cd xnu-source
-          # 1. Remove all kernelContent occurrences from any existing files
-          find . -type f \( -name "*.iig" -o -name "*.cpp" -o -name "*.h" -o -name "*.c" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
-          
-          # 2. Broadly replace uio_stackbuf_t with char to solve alignment errors globally across all C source files
+          # 1. Erstat uio_stackbuf_t med char globalt i C-filer for at undgå alignment-fejl
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper and Sanitizer
+      - name: Setup Global Clang/CXX Wrapper and Missing Headers
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/bin"
           mkdir -p "$STUB_DIR/include/os"
 
-          # Create dummy firehose buffer private header to resolve libkern log.c error
+          # Opret manglende firehose_buffer_private.h header til libkern log.c og subr_log.c
           cat << 'EOF' > "$STUB_DIR/include/os/firehose_buffer_private.h"
           #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
           #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
@@ -61,7 +58,7 @@ jobs:
           #endif
           EOF
 
-          # Create a custom clang-wrapper that automatically strips kernelContent from any generated iig.cpp file on the fly
+          # Clang wrapper der automatisk rydder op i genererede iig.cpp filer, hvis nødvendigt
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           ARGS=("$@")
@@ -69,10 +66,6 @@ jobs:
           for arg in "${ARGS[@]}"; do
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
-              fi
-              # If a generated iig.cpp file is being compiled, sanitize it right before compiler invocation
-              if [[ "$arg" == *.iig.cpp ]]; then
-                  sed -i '' '/kernelContent/d' "$arg" 2>/dev/null || true
               fi
           done
           TOOL="clang"
@@ -139,3 +132,4 @@ jobs:
             xnu-source/BUILD/**/*.dSYM*
             xnu-source/BUILD/**/*.map
           if-no-files-found: warn
+```[cite: 3]
