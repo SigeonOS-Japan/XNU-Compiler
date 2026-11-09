@@ -131,7 +131,8 @@ jobs:
           void _oslogselect(void) {}
           EOF
 
-          clang -c custom_stubs/lib/stubs_impl.c -o custom_stubs/lib/stubs_impl.o
+          # Fixed compile line with -Icustom_stubs/include
+          clang -c custom_stubs/lib/stubs_impl.c -Icustom_stubs/include -o custom_stubs/lib/stubs_impl.o
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
