@@ -20,7 +20,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
           xcodebuild -version
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
-          
+
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
@@ -35,94 +35,45 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Phase 1 - Stage and Install Export Headers (Pristine Environment)
+      - name: Clone libdispatch (real firehose headers)
+        run: |
+          git clone --depth=1 https://github.com/apple-oss-distributions/libdispatch.git libdispatch
+          echo "Firehose-related headers found:"
+          find libdispatch \( -name 'firehose*.h' -o -name 'chunk_private.h' \) | sort
+        shell: bash
+
+      - name: Phase 1 - Stage and Install Export Headers
         run: |
           cd xnu-source
           make SDKROOT=macosx ARCH_CONFIGS=X86_64 installhdrs
         shell: bash
 
-      - name: Phase 2 Setup - Stub Headers, Symbol Implementations, and Wrappers
+      - name: Phase 2 Setup - Stub library, include flags, compiler wrapper
         run: |
           cd xnu-source
-          
-          # Create stub directories
-          mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib custom_stubs/bin
-          
-          # 1. Comprehensive kernel stub header with full firehose chunk definitions
-          cat << 'EOF' > custom_stubs/include/kernel_stubs.h
-          #ifndef __KERNEL_STUBS_H__
-          #define __KERNEL_STUBS_H__
+          mkdir -p custom_stubs/lib custom_stubs/bin
 
-          #include <stdint.h>
-          #include <stddef.h>
-          #include <stdbool.h>
+          # 1. Include flags pointing at the REAL firehose headers (no fake structs)
+          LD_ROOT="$GITHUB_WORKSPACE/libdispatch"
+          FLAGS=""
+          while IFS= read -r d; do
+            FLAGS="$FLAGS -I$d -I$(dirname "$d")"
+          done < <(find "$LD_ROOT" \( -name 'firehose*.h' -o -name 'chunk_private.h' \) -exec dirname {} \; | sort -u)
+          echo "$FLAGS" > custom_stubs/include_flags
+          echo "Include flags: $FLAGS"
 
-          #define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT 2
-          #define FIREHOSE_CHUNK_SIZE 4096
-          #define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 2
-          #define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 1
-
-          typedef struct firehose_tracepoint_s * firehose_tracepoint_t;
-          typedef void* firehose_chunk_t;
-
-          struct firehose_chunk_s {
-              uint64_t fc_data[512];
-          };
-
-          #ifdef __cplusplus
-          extern "C" {
-          #endif
-
-          extern void *__os_log_default;
-          extern void *__os_log_internal;
-          extern void *__os_log_internal_driverKit;
-          extern char *__aslbufp;
-          extern char *__msgbufp;
-          extern bool startup_serial_logging_active;
-          extern uint64_t startup_serial_num_procs;
-
-          void __dummy_firehose(void);
-          int __firehose_kernel_configuration_valid(uint64_t chunks, uint64_t iopages);
-          void* __firehose_buffer_create(size_t *size);
-          bool __firehose_merge_updates(uint64_t val);
-
-          #ifdef __cplusplus
-          }
-          #endif
-
-          #endif
-          EOF
-
-          # 2. Firehose specific headers
-          cat << 'EOF' > custom_stubs/include/os/firehose_buffer_private.h
-          #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          #include <kernel_stubs.h>
-          static inline firehose_tracepoint_t __firehose_buffer_tracepoint_reserve(uint64_t a, uint32_t b, uint16_t c, uint32_t d, void *e) { return 0; }
-          static inline void __firehose_buffer_tracepoint_flush(firehose_tracepoint_t a, uint64_t b) {}
-          static inline int firehose_chunk_tracepoint_try_reserve(void *a, uint64_t b, uint32_t c, uint16_t d, uint32_t e, void *f) { return 0; }
-          static inline void* firehose_chunk_tracepoint_begin(void *a, uint64_t b, uint16_t c, uint64_t d, long e) { return 0; }
-          static inline void firehose_chunk_tracepoint_end(void *a, void *b, uint64_t c) {}
-          #endif
-          EOF
-
-          cat << 'EOF' > custom_stubs/include/firehose/chunk_private.h
-          #ifndef __FIREHOSE_CHUNK_PRIVATE_H__
-          #define __FIREHOSE_CHUNK_PRIVATE_H__
-          #include <kernel_stubs.h>
-          #endif
-          EOF
-
-          # 3. Implement missing global symbols to satisfy the linker
+          # 2. Stub implementations ONLY for symbols that don't exist anywhere.
+          #    No header is included, so nothing can shadow the real definitions.
           cat << 'EOF' > custom_stubs/lib/stubs_impl.c
-          #include <kernel_stubs.h>
+          #include <stddef.h>
+          #include <stdint.h>
 
           void *__os_log_default = NULL;
           void *__os_log_internal = NULL;
           void *__os_log_internal_driverKit = NULL;
           char *__aslbufp = NULL;
           char *__msgbufp = NULL;
-          bool startup_serial_logging_active = false;
+          _Bool startup_serial_logging_active = 0;
           uint64_t startup_serial_num_procs = 0;
 
           void __dummy_firehose(void) {}
@@ -145,54 +96,55 @@ jobs:
           void _oslogopen(void) {}
           void _oslogselect(void) {}
           int __firehose_kernel_configuration_valid(uint64_t chunks, uint64_t iopages) { return 1; }
-          void* __firehose_buffer_create(size_t *size) { return NULL; }
-          bool __firehose_merge_updates(uint64_t val) { return false; }
+          void *__firehose_buffer_create(size_t *size) { return NULL; }
+          _Bool __firehose_merge_updates(void) { return 0; }
           EOF
 
-          clang -c custom_stubs/lib/stubs_impl.c -Icustom_stubs/include -o custom_stubs/lib/stubs_impl.o
+          clang -c custom_stubs/lib/stubs_impl.c -o custom_stubs/lib/stubs_impl.o
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
-          # 4. Create the compiler wrapper script (skipping assembly files and header exports)
+          # 3. Compiler wrapper
+          #    - assembly: passed through untouched (no stub flags, no -include)
+          #    - C/C++ compile: adds real firehose include paths + relaxed warnings
+          #    - link (no -c/-E/-S): appends the stub library
           cat << 'EOF' > custom_stubs/bin/clang-wrapper
           #!/bin/bash
-          SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-          STUB_LIB="$SCRIPT_DIR/lib/libcustom_stubs.a"
-          
-          ARGS=("$@")
-          NEW_ARGS=()
-          IS_EXPORT_HDR=0
-          IS_ASSEMBLY=0
-          
-          for arg in "${ARGS[@]}"; do
-              if [[ "$arg" == *"EXPORT_HDRS"* ]]; then
-                  IS_EXPORT_HDR=1
-              fi
-              if [[ "$arg" == *.s ]] || [[ "$arg" == *.S ]]; then
-                  IS_ASSEMBLY=1
-              fi
-              if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
-                  NEW_ARGS+=("$arg")
-              fi
+          SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          REAL=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+          TOOL=clang
+          [[ "$(basename "$0")" == *"++"* ]] && TOOL=clang++
+
+          ARGS=()
+          IS_ASM=0
+          IS_COMPILE=0
+          PREV=""
+          for arg in "$@"; do
+            case "$arg" in
+              -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang) continue ;;
+              *.s|*.S) IS_ASM=1 ;;
+              assembler|assembler-with-cpp) [ "$PREV" = "-x" ] && IS_ASM=1 ;;
+              -c|-E|-S|-M|-MM) IS_COMPILE=1 ;;
+            esac
+            PREV="$arg"
+            ARGS+=("$arg")
           done
-          
-          TOOL="clang"
-          if [[ "$(basename "$0")" == *"++"* ]]; then
-              TOOL="clang++"
+
+          if [ "$IS_ASM" -eq 1 ]; then
+            exec "$REAL/$TOOL" "${ARGS[@]}"
           fi
-          
-          if [ "$IS_EXPORT_HDR" -eq 1 ] || [ "$IS_ASSEMBLY" -eq 1 ]; then
-              exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL "${NEW_ARGS[@]}"
-          else
-              exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
+
+          if [ "$IS_COMPILE" -eq 1 ]; then
+            read -r -a EXTRA < "$SELF_DIR/include_flags"
+            exec "$REAL/$TOOL" -w -Wno-error "${EXTRA[@]}" "${ARGS[@]}"
           fi
+
+          # link step
+          exec "$REAL/$TOOL" "${ARGS[@]}" "$SELF_DIR/lib/libcustom_stubs.a"
           EOF
           chmod +x custom_stubs/bin/clang-wrapper
           ln -sf clang-wrapper custom_stubs/bin/clang
           ln -sf clang-wrapper custom_stubs/bin/clang++
-
-          # Fix uio alignments across C files
-          find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
       - name: Phase 2 - Build XNU Kernel Target
@@ -202,30 +154,19 @@ jobs:
           export PATH="$STUB_PATH/bin:$PATH"
           export CC="$STUB_PATH/bin/clang"
           export CXX="$STUB_PATH/bin/clang++"
-          
-          STUB_INC="$STUB_PATH/include"
-          STUB_LIB="$STUB_PATH/lib"
-          export RC_CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
-          export CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
-          export CXXFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
-          
+
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$CC" CXX="$CXX" \
-               HOST_CC="$CC" \
-               HOST_CFLAGS="-std=gnu89 -w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC" \
                BUILD_WERROR=0 \
-               RC_CFLAGS="$RC_CFLAGS" \
-               EXTRA_CFLAGS="$CFLAGS" \
-               EXTRA_CXXFLAGS="$CFLAGS" \
-               OTHER_CFLAGS="$CFLAGS" \
                build
         shell: bash
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: xnu-kernel-artifacts
           path: |
