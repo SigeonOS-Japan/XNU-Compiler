@@ -93,7 +93,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Targets Directly
+      - name: Phase 2 - Build XNU Kernel Target
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -107,7 +107,7 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
-          # Build target components directly to avoid bootstrap packaging rules
+          # Run setup / configure for the target first, then build
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
@@ -120,9 +120,22 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               build_ide
+               setup
+               
+          make SDKROOT=macosx \
+               KERNEL_CONFIGS=RELEASE \
+               ARCH_CONFIGS=X86_64 \
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               CC="$CC" CXX="$CXX" \
+               HOST_CC="$CC" \
+               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
+               BUILD_WERROR=0 \
+               RC_CFLAGS="$RC_CFLAGS" \
+               EXTRA_CFLAGS="$CFLAGS" \
+               EXTRA_CXXFLAGS="$CFLAGS" \
+               OTHER_CFLAGS="$CFLAGS"
         shell: bash
-
+        
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
