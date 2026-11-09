@@ -54,13 +54,19 @@ jobs:
           mkdir -p custom_stubs/lib custom_stubs/bin
 
           # 1. Include flags pointing at the REAL firehose headers (no fake structs)
+          #    Copy ONLY firehose headers into a staging dir and add it with
+          #    -idirafter so it can never shadow SDK/XNU headers (e.g. os/object.h).
           LD_ROOT="$GITHUB_WORKSPACE/libdispatch"
-          FLAGS=""
-          while IFS= read -r d; do
-            FLAGS="$FLAGS -I$d -I$(dirname "$d")"
-          done < <(find "$LD_ROOT" \( -name 'firehose*.h' -o -name 'chunk_private.h' \) -exec dirname {} \; | sort -u)
-          echo "$FLAGS" > custom_stubs/include_flags
-          echo "Include flags: $FLAGS"
+          STAGE="$PWD/custom_stubs/firehose_include"
+          mkdir -p "$STAGE/firehose" "$STAGE/os"
+          while IFS= read -r f; do
+            cp -n "$f" "$STAGE/firehose/" 2>/dev/null || true
+            if [ "$(basename "$(dirname "$f")")" = "os" ]; then
+              cp -n "$f" "$STAGE/os/" 2>/dev/null || true
+            fi
+          done < <(find "$LD_ROOT" \( -name 'firehose*.h' -o -name 'chunk_private.h' \))
+          echo "-idirafter $STAGE -idirafter $STAGE/firehose" > custom_stubs/include_flags
+          echo "Staged headers:"; find "$STAGE" -type f | sort
 
           # 2. Stub implementations ONLY for symbols that don't exist anywhere.
           #    No header is included, so nothing can shadow the real definitions.
