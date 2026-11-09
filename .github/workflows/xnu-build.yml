@@ -35,25 +35,30 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Patch Incompatibilities and Global Alignments
+      - name: Inject Missing Headers and Patch Source Tree
         run: |
           cd xnu-source
+          
+          # 1. Place firehose_buffer_private.h directly into libkern/os/ so it's always found
+          mkdir -p libkern/os
+          cat << 'EOF' > libkern/os/firehose_buffer_private.h
+          #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
+          #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
+          // Stubbed private header for XNU build compatibility
+          #endif
+          EOF
+
+          # 2. Fix uio alignments globally across C files
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper and Missing Headers
+      - name: Setup Global Clang/CXX Wrapper and Sanitizer
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/bin"
-          mkdir -p "$STUB_DIR/include/os"
 
-          cat << 'EOF' > "$STUB_DIR/include/os/firehose_buffer_private.h"
-          #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          #endif
-          EOF
-
+          # Create a wrapper that automatically strips kernelContent out of dynamically generated iig.cpp files
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           ARGS=("$@")
@@ -62,12 +67,16 @@ jobs:
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
               fi
+              # If compiling an iig.cpp file, purge kernelContent references on the fly
+              if [[ "$arg" == *.iig.cpp ]]; then
+                  sed -i '' '/kernelContent/d' "$arg" 2>/dev/null || true
+              fi
           done
           TOOL="clang"
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -isystem "$PWD/../custom_stubs/include" "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           
@@ -127,3 +136,4 @@ jobs:
             xnu-source/BUILD/**/*.dSYM*
             xnu-source/BUILD/**/*.map
           if-no-files-found: warn
+```[cite: 3, 4]
