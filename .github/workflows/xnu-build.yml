@@ -39,11 +39,11 @@ jobs:
       - name: Patch Incompatibilities (DriverKit, Alignments, & kernelContent)
         run: |
           cd xnu-source
-          # 1. Remove all kernelContent occurrences from any source or generated output
+          # 1. Remove all kernelContent occurrences from any source or header
           find . -type f \( -name "*.iig" -o -name "*.cpp" -o -name "*.h" -o -name "*.c" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
           
-          # 2. Fix uio_stackbuf_t alignment sizing in vfs files and security lookups
-          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c bsd/vfs/vfs_lookup.c security/mac_vfs_subr.c || true
+          # 2. Fix uio_stackbuf_t alignment sizing across all VFS and security files
+          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c bsd/vfs/vfs_lookup.c bsd/vfs/vfs_quota.c security/mac_vfs_subr.c || true
         shell: bash
 
       - name: Setup Global Clang/CXX Wrapper and Missing Headers
@@ -110,7 +110,25 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
-          # Execute the complete configuration and build target using standard parameters
+          # Run initial setup phase
+          make SDKROOT=macosx \
+               KERNEL_CONFIGS=RELEASE \
+               ARCH_CONFIGS=X86_64 \
+               RC_DARWIN_KERNEL_VERSION="22.0.0" \
+               CC="$CC" CXX="$CXX" \
+               HOST_CC="$CC" \
+               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
+               BUILD_WERROR=0 \
+               RC_CFLAGS="$RC_CFLAGS" \
+               EXTRA_CFLAGS="$CFLAGS" \
+               EXTRA_CXXFLAGS="$CFLAGS" \
+               OTHER_CFLAGS="$CFLAGS" \
+               setup
+
+          # Purge newly generated IIG/DriverKit files of any kernelContent properties right before compilation
+          find . -type f \( -name "*.iig.cpp" -o -name "*.iig.h" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
+
+          # Execute build target
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
