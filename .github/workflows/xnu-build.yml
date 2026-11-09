@@ -43,11 +43,20 @@ jobs:
           find . -name "*.iig" -o -name "*.cpp" -o -name "*.h" 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper
+      - name: Setup Global Clang/CXX Wrapper and Missing Headers
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/bin"
+          mkdir -p "$STUB_DIR/include/os"
+
+          # Create dummy firehose buffer private header to resolve libkern log.c error
+          cat << 'EOF' > "$STUB_DIR/include/os/firehose_buffer_private.h"
+          #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
+          #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
+          // Stubbed private header for XNU build compatibility
+          #endif
+          EOF
 
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
@@ -62,7 +71,7 @@ jobs:
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -isystem "$PWD/../custom_stubs/include" "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           
@@ -111,7 +120,7 @@ jobs:
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS"
         shell: bash
-        
+
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
