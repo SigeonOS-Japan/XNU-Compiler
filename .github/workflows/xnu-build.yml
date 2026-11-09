@@ -12,6 +12,9 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Configure Xcode Toolchain and SDK Fixes
         run: |
           sudo xcode-select -s /Applications/Xcode.app
@@ -33,13 +36,20 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
+      - name: Patch DriverKit IORPC kernelContent Incompatibility
+        run: |
+          cd xnu-source
+          # Strip obsolete kernelContent field references from DriverKit source generation templates
+          find iokit -name "*.iig" -type f 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
+          find EXTERNAL_HEADERS -name "*.h" -type f 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
+        shell: bash
+
       - name: Setup Global Clang/CXX Wrapper
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
           mkdir -p "$STUB_DIR/bin"
 
-          # Create robust wrapper for both clang and clang++
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           ARGS=("$@")
@@ -49,7 +59,6 @@ jobs:
                   NEW_ARGS+=("$arg")
               fi
           done
-          # Determine if called as clang++ or clang
           TOOL="clang"
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
@@ -58,7 +67,6 @@ jobs:
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           
-          # Symlink both names
           ln -sf clang-wrapper "$STUB_DIR/bin/clang"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang++"
         shell: bash
@@ -77,7 +85,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Direct Target Kernel Build
+      - name: Phase 2 - Build XNU Kernel Target
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -91,7 +99,6 @@ jobs:
           export CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
           export CXXFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
           
-          # Invoke the explicit RELEASE configuration target for X86_64
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
