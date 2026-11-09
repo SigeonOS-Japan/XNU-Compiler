@@ -42,6 +42,30 @@ jobs:
           find libdispatch \( -name 'firehose*.h' -o -name 'chunk_private.h' \) | sort
         shell: bash
 
+      - name: Patch IORPC.h (newer iig emits kernelContent, Ventura XNU lacks it)
+        run: |
+          cd xnu-source
+          F=iokit/IOKit/IORPC.h
+          echo "=== IORPC struct BEFORE ==="
+          grep -n -B2 -A10 'struct IORPC *{' "$F" || true
+          python3 - "$F" << 'PY'
+          import re, sys
+          p = sys.argv[1]
+          s = open(p).read()
+          if 'kernelContent' in s:
+              print("already has kernelContent, skipping")
+              sys.exit(0)
+          new, n = re.subn(r'(struct\s+IORPC\s*\{[^}]*?)(\n\s*\};)',
+                           r'\1\n\tstruct IORPCMessage * kernelContent;\2', s, count=1)
+          if n != 1:
+              print("ERROR: could not find struct IORPC to patch"); sys.exit(1)
+          open(p, 'w').write(new)
+          print("patched")
+          PY
+          echo "=== IORPC struct AFTER ==="
+          grep -n -B2 -A12 'struct IORPC *{' "$F" || true
+        shell: bash
+
       - name: Phase 1 - Stage and Install Export Headers
         run: |
           cd xnu-source
