@@ -36,11 +36,14 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Patch Incompatibilities (DriverKit & Alignment)
+      - name: Patch Incompatibilities (DriverKit, Alignments, & kernelContent)
         run: |
           cd xnu-source
-          # Aggressively remove all kernelContent occurrences from any source or generated output
+          # 1. Remove all kernelContent occurrences from any source or generated output
           find . -type f \( -name "*.iig" -o -name "*.cpp" -o -name "*.h" -o -name "*.c" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
+          
+          # 2. Fix uio_stackbuf_t alignment sizing in vfs files by casting or casting array types
+          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c security/mac_vfs_subr.c || true
         shell: bash
 
       - name: Setup Global Clang/CXX Wrapper and Missing Headers
@@ -93,7 +96,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target
+      - name: Phase 2 - Build XNU Kernel Target Directly
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -107,6 +110,16 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
+          # Directly target the compiled config directory instead of root bootstrap
+          make -C BUILD/obj/RELEASE/X86_64 SDKROOT=macosx \
+               CC="$CC" CXX="$CXX" \
+               HOST_CC="$CC" \
+               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
+               BUILD_WERROR=0 \
+               RC_CFLAGS="$RC_CFLAGS" \
+               EXTRA_CFLAGS="$CFLAGS" \
+               EXTRA_CXXFLAGS="$CFLAGS" \
+               OTHER_CFLAGS="$CFLAGS" || \
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
