@@ -168,7 +168,7 @@ jobs:
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target
+      - name: Phase 2 - Build XNU Kernel Target (Using Target-Specific Build Target)
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -182,6 +182,7 @@ jobs:
           export CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
           export CXXFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
           
+          # Build specifically the kernel target to avoid re-triggering installhdrs
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
@@ -194,7 +195,7 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               build
+               kernel
         shell: bash
 
       - name: Archive Build Artifacts
