@@ -39,14 +39,14 @@ jobs:
       - name: Patch Incompatibilities (DriverKit, Alignments, & kernelContent)
         run: |
           cd xnu-source
-          # 1. Remove all kernelContent occurrences from any source or header
+          # 1. Remove all kernelContent occurrences from any existing files
           find . -type f \( -name "*.iig" -o -name "*.cpp" -o -name "*.h" -o -name "*.c" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
           
-          # 2. Fix uio_stackbuf_t alignment sizing across all VFS and security files
-          sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' bsd/vfs/vfs_attrlist.c bsd/vfs/vfs_lookup.c bsd/vfs/vfs_quota.c security/mac_vfs_subr.c || true
+          # 2. Broadly replace uio_stackbuf_t with char to solve alignment errors globally across all C source files
+          find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper and Missing Headers
+      - name: Setup Global Clang/CXX Wrapper and Sanitizer
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
@@ -61,6 +61,7 @@ jobs:
           #endif
           EOF
 
+          # Create a custom clang-wrapper that automatically strips kernelContent from any generated iig.cpp file on the fly
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           ARGS=("$@")
@@ -68,6 +69,10 @@ jobs:
           for arg in "${ARGS[@]}"; do
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
+              fi
+              # If a generated iig.cpp file is being compiled, sanitize it right before compiler invocation
+              if [[ "$arg" == *.iig.cpp ]]; then
+                  sed -i '' '/kernelContent/d' "$arg" 2>/dev/null || true
               fi
           done
           TOOL="clang"
@@ -110,25 +115,6 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
-          # Run initial setup phase
-          make SDKROOT=macosx \
-               KERNEL_CONFIGS=RELEASE \
-               ARCH_CONFIGS=X86_64 \
-               RC_DARWIN_KERNEL_VERSION="22.0.0" \
-               CC="$CC" CXX="$CXX" \
-               HOST_CC="$CC" \
-               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
-               BUILD_WERROR=0 \
-               RC_CFLAGS="$RC_CFLAGS" \
-               EXTRA_CFLAGS="$CFLAGS" \
-               EXTRA_CXXFLAGS="$CFLAGS" \
-               OTHER_CFLAGS="$CFLAGS" \
-               setup
-
-          # Purge newly generated IIG/DriverKit files of any kernelContent properties right before compilation
-          find . -type f \( -name "*.iig.cpp" -o -name "*.iig.h" \) 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
-
-          # Execute build target
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
