@@ -141,7 +141,7 @@ jobs:
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
-          # 4. Create the compiler wrapper script
+          # 4. Create the compiler wrapper script (bypassing wrapper if processing header exports)
           cat << 'EOF' > custom_stubs/bin/clang-wrapper
           #!/bin/bash
           SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -149,16 +149,26 @@ jobs:
           
           ARGS=("$@")
           NEW_ARGS=()
+          IS_EXPORT_HDR=0
           for arg in "${ARGS[@]}"; do
+              if [[ "$arg" == *"EXPORT_HDRS"* ]]; then
+                  IS_EXPORT_HDR=1
+              fi
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
               fi
           done
+          
           TOOL="clang"
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
+          
+          if [ "$IS_EXPORT_HDR" -eq 1 ]; then
+              exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL "${NEW_ARGS[@]}"
+          else
+              exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
+          fi
           EOF
           chmod +x custom_stubs/bin/clang-wrapper
           ln -sf clang-wrapper custom_stubs/bin/clang
@@ -168,7 +178,7 @@ jobs:
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Target (Using Target-Specific Build Target)
+      - name: Phase 2 - Build XNU Kernel Target
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -182,7 +192,6 @@ jobs:
           export CFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
           export CXXFLAGS="-w -Wno-error -include $STUB_INC/kernel_stubs.h -I$STUB_INC"
           
-          # Build specifically the kernel target to avoid re-triggering installhdrs
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
@@ -195,7 +204,7 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               kernel
+               build
         shell: bash
 
       - name: Archive Build Artifacts
