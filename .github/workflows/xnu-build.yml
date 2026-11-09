@@ -35,18 +35,18 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Phase 1 - Stage and Install Export Headers (Pristine Tools)
+      - name: Phase 1 - Stage and Install Export Headers (Pristine Environment)
         run: |
           cd xnu-source
           make SDKROOT=macosx ARCH_CONFIGS=X86_64 installhdrs
         shell: bash
 
-      - name: Setup Comprehensive Stub Headers and Symbol Implementations
+      - name: Phase 2 Setup - Stub Headers, Symbol Implementations, and Wrappers
         run: |
           cd xnu-source
           
           # Create stub directories
-          mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib
+          mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib custom_stubs/bin
           
           # 1. Comprehensive kernel stub header
           cat << 'EOF' > custom_stubs/include/kernel_stubs.h
@@ -141,17 +141,8 @@ jobs:
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
-          # Fix uio alignments across C files
-          find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
-        shell: bash
-
-      - name: Setup Global Clang/CXX Wrapper for Phase 2
-        run: |
-          cd xnu-source
-          STUB_DIR="$PWD/custom_stubs"
-          mkdir -p "$STUB_DIR/bin"
-          
-          cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
+          # 4. Create the compiler wrapper script
+          cat << 'EOF' > custom_stubs/bin/clang-wrapper
           #!/bin/bash
           SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
           STUB_LIB="$SCRIPT_DIR/lib/libcustom_stubs.a"
@@ -169,9 +160,12 @@ jobs:
           fi
           exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
           EOF
-          chmod +x "$STUB_DIR/bin/clang-wrapper"
-          ln -sf clang-wrapper "$STUB_DIR/bin/clang"
-          ln -sf clang-wrapper "$STUB_DIR/bin/clang++"
+          chmod +x custom_stubs/bin/clang-wrapper
+          ln -sf clang-wrapper custom_stubs/bin/clang
+          ln -sf clang-wrapper custom_stubs/bin/clang++
+
+          # Fix uio alignments across C files
+          find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
       - name: Phase 2 - Build XNU Kernel Target
