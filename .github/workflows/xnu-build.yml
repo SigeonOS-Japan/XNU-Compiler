@@ -167,8 +167,26 @@ jobs:
                RC_DARWIN_KERNEL_VERSION="22.0.0" \
                CC="$CC" CXX="$CXX" \
                BUILD_WERROR=0 \
-               build
+               build 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
         shell: bash
+
+      - name: Show first errors (only on failure)
+        if: failure()
+        run: |
+          echo "=== First error-looking lines ==="
+          grep -n -E "error:|fatal error|undefined|Undefined|No such file|command not found|ld: |\*\*\* \[" build.log | head -60
+          echo "=== 40 lines before the first make *** line ==="
+          N=$(grep -n -m1 '\*\*\* \[' build.log | cut -d: -f1)
+          [ -n "$N" ] && sed -n "$((N>40 ? N-40 : 1)),${N}p" build.log
+        shell: bash
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xnu-build-log
+          path: build.log
+          if-no-files-found: warn
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
