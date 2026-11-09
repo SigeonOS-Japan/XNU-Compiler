@@ -48,7 +48,7 @@ jobs:
           # Create stub directories
           mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib custom_stubs/bin
           
-          # 1. Comprehensive kernel stub header (types aligned with XNU native definitions)
+          # 1. Comprehensive kernel stub header with full firehose chunk definitions
           cat << 'EOF' > custom_stubs/include/kernel_stubs.h
           #ifndef __KERNEL_STUBS_H__
           #define __KERNEL_STUBS_H__
@@ -59,9 +59,15 @@ jobs:
 
           #define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT 2
           #define FIREHOSE_CHUNK_SIZE 4096
+          #define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 2
+          #define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 1
 
           typedef struct firehose_tracepoint_s * firehose_tracepoint_t;
           typedef void* firehose_chunk_t;
+
+          struct firehose_chunk_s {
+              uint64_t fc_data[512];
+          };
 
           #ifdef __cplusplus
           extern "C" {
@@ -76,6 +82,9 @@ jobs:
           extern uint64_t startup_serial_num_procs;
 
           void __dummy_firehose(void);
+          int __firehose_kernel_configuration_valid(uint64_t chunks, uint64_t iopages);
+          void* __firehose_buffer_create(size_t *size);
+          bool __firehose_merge_updates(uint64_t val);
 
           #ifdef __cplusplus
           }
@@ -135,13 +144,16 @@ jobs:
           void _oslogioctl(void) {}
           void _oslogopen(void) {}
           void _oslogselect(void) {}
+          int __firehose_kernel_configuration_valid(uint64_t chunks, uint64_t iopages) { return 1; }
+          void* __firehose_buffer_create(size_t *size) { return NULL; }
+          bool __firehose_merge_updates(uint64_t val) { return false; }
           EOF
 
           clang -c custom_stubs/lib/stubs_impl.c -Icustom_stubs/include -o custom_stubs/lib/stubs_impl.o
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
-          # 4. Create the compiler wrapper script (bypassing wrapper if processing header exports)
+          # 4. Create the compiler wrapper script (skipping assembly files and header exports)
           cat << 'EOF' > custom_stubs/bin/clang-wrapper
           #!/bin/bash
           SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -150,9 +162,14 @@ jobs:
           ARGS=("$@")
           NEW_ARGS=()
           IS_EXPORT_HDR=0
+          IS_ASSEMBLY=0
+          
           for arg in "${ARGS[@]}"; do
               if [[ "$arg" == *"EXPORT_HDRS"* ]]; then
                   IS_EXPORT_HDR=1
+              fi
+              if [[ "$arg" == *.s ]] || [[ "$arg" == *.S ]]; then
+                  IS_ASSEMBLY=1
               fi
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
@@ -164,7 +181,7 @@ jobs:
               TOOL="clang++"
           fi
           
-          if [ "$IS_EXPORT_HDR" -eq 1 ]; then
+          if [ "$IS_EXPORT_HDR" -eq 1 ] || [ "$IS_ASSEMBLY" -eq 1 ]; then
               exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL "${NEW_ARGS[@]}"
           else
               exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -include "$SCRIPT_DIR/include/kernel_stubs.h" -I"$SCRIPT_DIR/include" "$STUB_LIB" "${NEW_ARGS[@]}"
