@@ -35,12 +35,12 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Setup Stub Headers and Neutralize Log Files
+      - name: Setup Stub Headers, Dummy Libraries, and Neutralize Log Files
         run: |
           cd xnu-source
           
-          # Create a global include directory for stub headers (without conflicting typedefs)
-          mkdir -p custom_stubs/include/os custom_stubs/include/firehose
+          # Create global include and library directories for stubs
+          mkdir -p custom_stubs/include/os custom_stubs/include/firehose custom_stubs/lib
           
           cat << 'EOF' > custom_stubs/include/os/firehose_buffer_private.h
           #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
@@ -62,6 +62,12 @@ jobs:
           typedef void* firehose_chunk_t;
           #endif
           EOF
+
+          # Build a dummy libfirehose_kernel.a archive to satisfy the linker
+          echo "void __dummy_firehose(void) {}" > custom_stubs/lib/dummy.c
+          clang -c custom_stubs/lib/dummy.c -o custom_stubs/lib/dummy.o
+          ar rcs custom_stubs/lib/libfirehose_kernel.a custom_stubs/lib/dummy.o
+          rm custom_stubs/lib/dummy.c custom_stubs/lib/dummy.o
 
           # Truncate problematic log source files to clean empty units
           echo "/* stubbed log */" > libkern/os/log.c
@@ -85,7 +91,6 @@ jobs:
               if [ "$arg" != "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang" ]; then
                   NEW_ARGS+=("$arg")
               fi
-              # If compiling any generated iig.cpp file, stub it out completely to prevent version mismatch errors
               if [[ "$arg" == *.iig.cpp ]]; then
                   echo "/* stubbed iig */" > "$arg"
               fi
@@ -94,7 +99,7 @@ jobs:
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -I"$STUB_DIR/include" "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -I"$STUB_DIR/include" -L"$STUB_DIR/lib" "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang"
@@ -121,9 +126,11 @@ jobs:
           mkdir -p BUILD/obj/EXPORT_HDRS/libsa
           
           STUB_INC="$STUB_PATH/include"
-          export RC_CFLAGS="-w -Wno-error -I$STUB_INC"
-          export CFLAGS="-w -Wno-error -I$STUB_INC"
-          export CXXFLAGS="-w -Wno-error -I$STUB_INC"
+          STUB_LIB="$STUB_PATH/lib"
+          export RC_CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
+          export CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
+          export CXXFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
+          export LDFLAGS="-L$STUB_LIB"
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
