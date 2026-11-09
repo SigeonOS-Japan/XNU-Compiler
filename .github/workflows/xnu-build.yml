@@ -35,15 +35,31 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Inject Missing Headers and Patch Source Tree
+      - name: Patch Firehose Logs and Alignments
         run: |
           cd xnu-source
-          mkdir -p libkern/os
+          mkdir -p libkern/os libkern/firehose
+          
+          # Create a complete header stub for firehose buffering
           cat << 'EOF' > libkern/os/firehose_buffer_private.h
           #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
           #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
+          #define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT 2
+          typedef struct firehose_tracepoint_s * firehose_tracepoint_t;
+          static inline firehose_tracepoint_t __firehose_buffer_tracepoint_reserve(uint64_t a, uint32_t b, uint16_t c, uint32_t d, void *e) { return 0; }
+          static inline void __firehose_buffer_tracepoint_flush(firehose_tracepoint_t a, uint64_t b) {}
           #endif
           EOF
+
+          cat << 'EOF' > libkern/firehose/chunk_private.h
+          #ifndef __FIREHOSE_CHUNK_PRIVATE_H__
+          #define __FIREHOSE_CHUNK_PRIVATE_H__
+          typedef void* firehose_chunk_t;
+          static inline int firehose_chunk_tracepoint_try_reserve(void *a, uint64_t b, uint32_t c, uint16_t d, uint32_t e, void *f) { return 0; }
+          #endif
+          EOF
+
+          # Neutralize log.c and subr_log.c body errors if they trigger strict compilation blockers
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
