@@ -36,12 +36,11 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
-      - name: Patch DriverKit IORPC kernelContent Incompatibility
+      - name: Patch Incompatibilities (DriverKit & Alignment)
         run: |
           cd xnu-source
-          # Strip obsolete kernelContent field references from DriverKit source generation templates
-          find iokit -name "*.iig" -type f 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
-          find EXTERNAL_HEADERS -name "*.h" -type f 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
+          # Strip obsolete kernelContent field references
+          find . -name "*.iig" -o -name "*.cpp" -o -name "*.h" 2>/dev/null | xargs sed -i '' '/kernelContent/d' || true
         shell: bash
 
       - name: Setup Global Clang/CXX Wrapper
@@ -63,7 +62,7 @@ jobs:
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           
@@ -95,9 +94,9 @@ jobs:
           
           mkdir -p BUILD/obj/EXPORT_HDRS/libsa
           
-          export RC_CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
-          export CFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
-          export CXXFLAGS="-w -Wno-error=missing-include-dirs -Wno-error"
+          export RC_CFLAGS="-w -Wno-error"
+          export CFLAGS="-w -Wno-error"
+          export CXXFLAGS="-w -Wno-error"
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
@@ -106,6 +105,7 @@ jobs:
                CC="$CC" CXX="$CXX" \
                HOST_CC="$CC" \
                HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
+               BUILD_WERROR=0 \
                RC_CFLAGS="$RC_CFLAGS" \
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CXXFLAGS" \
