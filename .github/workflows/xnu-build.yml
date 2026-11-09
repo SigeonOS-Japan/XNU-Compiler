@@ -96,7 +96,7 @@ jobs:
                installhdrs
         shell: bash
 
-      - name: Phase 2 - Build XNU Kernel Targets
+      - name: Phase 2 - Build XNU Kernel Target
         run: |
           cd xnu-source
           STUB_PATH="$PWD/custom_stubs"
@@ -110,7 +110,7 @@ jobs:
           export CFLAGS="-w -Wno-error"
           export CXXFLAGS="-w -Wno-error"
           
-          # 1. Run setup to generate configuration build directories
+          # Execute the complete configuration and build target using standard parameters
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
@@ -123,18 +123,7 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               setup
-
-          # 2. Build directly inside the generated sub-make context to skip the wrapper
-          make -C BUILD/obj/RELEASE/X86_64 SDKROOT=macosx \
-               CC="$CC" CXX="$CXX" \
-               HOST_CC="$CC" \
-               HOST_CFLAGS="-std=gnu89 -w -Wno-error" \
-               BUILD_WERROR=0 \
-               RC_CFLAGS="$RC_CFLAGS" \
-               EXTRA_CFLAGS="$CFLAGS" \
-               EXTRA_CXXFLAGS="$CFLAGS" \
-               OTHER_CFLAGS="$CFLAGS"
+               build
         shell: bash
 
       - name: Archive Build Artifacts
