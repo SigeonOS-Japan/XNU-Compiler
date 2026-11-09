@@ -21,7 +21,6 @@ jobs:
           xcodebuild -version
           SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
           
-          # Opret fallback mock til availability.pl script
           LIBEXEC_DIR="$SDK_PATH/usr/local/libexec"
           sudo mkdir -p "$LIBEXEC_DIR"
           printf '#!/usr/bin/env perl\nuse strict;\nuse warnings;\n1;\n' | sudo tee "$LIBEXEC_DIR/availability.pl" > /dev/null
@@ -39,7 +38,6 @@ jobs:
       - name: Patch Incompatibilities and Global Alignments
         run: |
           cd xnu-source
-          # 1. Erstat uio_stackbuf_t med char globalt i C-filer for at undgå alignment-fejl
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
@@ -50,15 +48,12 @@ jobs:
           mkdir -p "$STUB_DIR/bin"
           mkdir -p "$STUB_DIR/include/os"
 
-          # Opret manglende firehose_buffer_private.h header til libkern log.c og subr_log.c
           cat << 'EOF' > "$STUB_DIR/include/os/firehose_buffer_private.h"
           #ifndef __OS_FIREHOSE_BUFFER_PRIVATE_H__
           #define __OS_FIREHOSE_BUFFER_PRIVATE_H__
-          // Stubbed private header for XNU build compatibility
           #endif
           EOF
 
-          # Clang wrapper der automatisk rydder op i genererede iig.cpp filer, hvis nødvendigt
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
           ARGS=("$@")
@@ -132,4 +127,3 @@ jobs:
             xnu-source/BUILD/**/*.dSYM*
             xnu-source/BUILD/**/*.map
           if-no-files-found: warn
-```[cite: 3]
