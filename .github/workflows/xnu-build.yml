@@ -94,6 +94,11 @@ jobs:
               if [[ "$arg" == *.iig.cpp ]]; then
                   echo "/* stubbed iig */" > "$arg"
               fi
+              # If linker is looking for -lfirehose_kernel, replace it with the direct path to our archive
+              if [ "$arg" = "-lfirehose_kernel" ]; then
+                  NEW_ARGS+=("'$STUB_DIR/lib/libfirehose_kernel.a'")
+                  continue
+              fi
           done
           TOOL="clang"
           if [[ "$(basename "$0")" == *"++"* ]]; then
@@ -124,16 +129,23 @@ jobs:
           export CC="$STUB_PATH/bin/clang"
           export CXX="$STUB_PATH/bin/clang++"
           
-          # Pre-create output directory and place libfirehose_kernel.a where the linker searches
-          mkdir -p BUILD/obj/RELEASE_X86_64
-          cp "$STUB_PATH/lib/libfirehose_kernel.a" BUILD/obj/RELEASE_X86_64/
-          
           STUB_INC="$STUB_PATH/include"
           STUB_LIB="$STUB_PATH/lib"
           export RC_CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
           export CFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
           export CXXFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
           export LDFLAGS="-L$STUB_LIB"
+          
+          # Continuously mirror libfirehose_kernel.a into all subdirectories in the background during build
+          (
+            while true; do
+              if [ -d BUILD ]; then
+                find BUILD -type d -exec cp "$STUB_LIB/libfirehose_kernel.a" {}/ 2>/dev/null \; || true
+              fi
+              sleep 1
+            done
+          ) &
+          MIRROR_PID=$!
           
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
@@ -147,7 +159,9 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               build
+               build || { kill $MIRROR_PID; exit 1; }
+          
+          kill $MIRROR_PID
         shell: bash
 
       - name: Archive Build Artifacts
