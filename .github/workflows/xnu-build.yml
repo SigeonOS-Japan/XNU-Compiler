@@ -35,6 +35,12 @@ jobs:
           git checkout xnu-8792.41.9
         shell: bash
 
+      - name: Phase 1 - Stage and Install Export Headers (Pristine Tools)
+        run: |
+          cd xnu-source
+          make SDKROOT=macosx ARCH_CONFIGS=X86_64 installhdrs
+        shell: bash
+
       - name: Setup Comprehensive Stub Headers and Symbol Implementations
         run: |
           cd xnu-source
@@ -131,7 +137,6 @@ jobs:
           void _oslogselect(void) {}
           EOF
 
-          # Fixed compile line with -Icustom_stubs/include
           clang -c custom_stubs/lib/stubs_impl.c -Icustom_stubs/include -o custom_stubs/lib/stubs_impl.o
           ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
@@ -140,7 +145,7 @@ jobs:
           find . -name "*.c" 2>/dev/null | xargs sed -i '' 's/uio_stackbuf_t[[:space:]]*uio_buf/char uio_buf/g' || true
         shell: bash
 
-      - name: Setup Global Clang/CXX Wrapper
+      - name: Setup Global Clang/CXX Wrapper for Phase 2
         run: |
           cd xnu-source
           STUB_DIR="$PWD/custom_stubs"
@@ -167,16 +172,6 @@ jobs:
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang++"
-        shell: bash
-
-      - name: Phase 1 - Stage and Install Export Headers
-        run: |
-          cd xnu-source
-          STUB_PATH="$PWD/custom_stubs"
-          export PATH="$STUB_PATH/bin:$PATH"
-          export CC="$STUB_PATH/bin/clang"
-          export CXX="$STUB_PATH/bin/clang++"
-          make SDKROOT=macosx ARCH_CONFIGS=X86_64 CC="$CC" CXX="$CXX" installhdrs
         shell: bash
 
       - name: Phase 2 - Build XNU Kernel Target
