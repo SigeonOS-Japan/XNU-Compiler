@@ -104,7 +104,14 @@ jobs:
               cp -n "$f" "$STAGE/os/" 2>/dev/null || true
             fi
           done < <(find "$LD_ROOT" \( -name 'firehose*.h' -o -name 'chunk_private.h' \))
-          echo "-idirafter $STAGE -idirafter $STAGE/firehose" > custom_stubs/include_flags
+          # Placeholder values for constants normally provided by Apple's internal SDK
+          # headers, plus relaxed diagnostics for the missing firehose prototypes.
+          echo "-idirafter $STAGE -idirafter $STAGE/firehose \
+          -DFIREHOSE_BUFFER_KERNEL_CHUNK_COUNT=16 \
+          -DFIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT=16 \
+          -DFIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES=8 \
+          -Wno-implicit-function-declaration -Wno-int-conversion" | tr -s ' \\\n' ' ' > custom_stubs/include_flags
+          echo "Wrapper extra flags: $(cat custom_stubs/include_flags)"
           echo "Staged headers:"; find "$STAGE" -type f | sort
 
           # 2. Stub implementations ONLY for symbols that don't exist anywhere.
@@ -143,6 +150,8 @@ jobs:
           int __firehose_kernel_configuration_valid(uint64_t chunks, uint64_t iopages) { return 1; }
           void *__firehose_buffer_create(size_t *size) { return NULL; }
           _Bool __firehose_merge_updates(void) { return 0; }
+          void *__firehose_buffer_tracepoint_reserve(void) { return NULL; }
+          void __firehose_buffer_tracepoint_flush(void) {}
           EOF
 
           clang -c custom_stubs/lib/stubs_impl.c -o custom_stubs/lib/stubs_impl.o
