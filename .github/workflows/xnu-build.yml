@@ -155,7 +155,8 @@ jobs:
           EOF
 
           clang -c custom_stubs/lib/stubs_impl.c -o custom_stubs/lib/stubs_impl.o
-          ar rcs custom_stubs/lib/libcustom_stubs.a custom_stubs/lib/stubs_impl.o
+          # Named libfirehose_kernel.a so the kernel link's -lfirehose_kernel finds it
+          ar rcs custom_stubs/lib/libfirehose_kernel.a custom_stubs/lib/stubs_impl.o
           rm custom_stubs/lib/stubs_impl.c custom_stubs/lib/stubs_impl.o
 
           # 3. Compiler wrapper
@@ -194,7 +195,7 @@ jobs:
           fi
 
           # link step
-          exec "$REAL/$TOOL" "${ARGS[@]}" "$SELF_DIR/lib/libcustom_stubs.a"
+          exec "$REAL/$TOOL" "${ARGS[@]}" -L"$SELF_DIR/lib"
           EOF
           chmod +x custom_stubs/bin/clang-wrapper
           ln -sf clang-wrapper custom_stubs/bin/clang
