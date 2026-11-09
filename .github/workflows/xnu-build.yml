@@ -66,6 +66,21 @@ jobs:
           grep -n -B2 -A12 'struct IORPC *{' "$F" || true
         shell: bash
 
+      - name: Patch uio_stackbuf_t arrays (newer clang rejects size/alignment mismatch)
+        run: |
+          cd xnu-source
+          echo "=== typedef ==="
+          grep -rn 'uio_stackbuf_t' --include='*.h' bsd/sys | head
+          echo "=== files using it ==="
+          FILES=$(grep -rl 'uio_stackbuf_t' --include='*.c' . || true)
+          echo "$FILES"
+          for f in $FILES; do
+            perl -pi -e 's/\buio_stackbuf_t\s+(\w+)\[(.*)\];/char $1\[$2\] __attribute__((aligned(8)));/' "$f"
+          done
+          echo "=== after ==="
+          grep -rn 'uio_buf\[' --include='*.c' . | head -20
+        shell: bash
+
       - name: Phase 1 - Stage and Install Export Headers
         run: |
           cd xnu-source
