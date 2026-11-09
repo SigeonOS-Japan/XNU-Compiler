@@ -85,6 +85,9 @@ jobs:
           
           cat << 'EOF' > "$STUB_DIR/bin/clang-wrapper"
           #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          LIB_PATH="$SCRIPT_DIR/lib/libfirehose_kernel.a"
+          
           ARGS=("$@")
           NEW_ARGS=()
           for arg in "${ARGS[@]}"; do
@@ -94,9 +97,8 @@ jobs:
               if [[ "$arg" == *.iig.cpp ]]; then
                   echo "/* stubbed iig */" > "$arg"
               fi
-              # If linker is looking for -lfirehose_kernel, replace it with the direct path to our archive
               if [ "$arg" = "-lfirehose_kernel" ]; then
-                  NEW_ARGS+=("'$STUB_DIR/lib/libfirehose_kernel.a'")
+                  NEW_ARGS+=("$LIB_PATH")
                   continue
               fi
           done
@@ -104,7 +106,7 @@ jobs:
           if [[ "$(basename "$0")" == *"++"* ]]; then
               TOOL="clang++"
           fi
-          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -I"$STUB_DIR/include" -L"$STUB_DIR/lib" "${NEW_ARGS[@]}"
+          exec /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/$TOOL -w -Wno-error -I"$SCRIPT_DIR/include" -L"$SCRIPT_DIR/lib" "${NEW_ARGS[@]}"
           EOF
           chmod +x "$STUB_DIR/bin/clang-wrapper"
           ln -sf clang-wrapper "$STUB_DIR/bin/clang"
@@ -136,17 +138,6 @@ jobs:
           export CXXFLAGS="-w -Wno-error -I$STUB_INC -L$STUB_LIB"
           export LDFLAGS="-L$STUB_LIB"
           
-          # Continuously mirror libfirehose_kernel.a into all subdirectories in the background during build
-          (
-            while true; do
-              if [ -d BUILD ]; then
-                find BUILD -type d -exec cp "$STUB_LIB/libfirehose_kernel.a" {}/ 2>/dev/null \; || true
-              fi
-              sleep 1
-            done
-          ) &
-          MIRROR_PID=$!
-          
           make SDKROOT=macosx \
                KERNEL_CONFIGS=RELEASE \
                ARCH_CONFIGS=X86_64 \
@@ -159,9 +150,7 @@ jobs:
                EXTRA_CFLAGS="$CFLAGS" \
                EXTRA_CXXFLAGS="$CFLAGS" \
                OTHER_CFLAGS="$CFLAGS" \
-               build || { kill $MIRROR_PID; exit 1; }
-          
-          kill $MIRROR_PID
+               build
         shell: bash
 
       - name: Archive Build Artifacts
