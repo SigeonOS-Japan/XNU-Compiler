@@ -236,13 +236,25 @@ jobs:
           path: build.log
           if-no-files-found: warn
 
+      - name: Collect kernel outputs
+        if: always()
+        run: |
+          mkdir -p kernel-out
+          echo "=== Kernel-looking files under BUILD ==="
+          find xnu-source/BUILD \( -name 'kernel' -o -name 'kernel.*' -o -name 'mach_kernel*' -o -name '*.map' -o -name '*.dSYM' \) \
+            -not -path '*/EXPORT_HDRS/*' -print | tee kernel-out/FILES.txt
+          while IFS= read -r f; do
+            # keep the path so same-named files from different dirs don't collide
+            dest="kernel-out/$(echo "$f" | sed 's#^xnu-source/BUILD/##; s#/#__#g')"
+            cp -R "$f" "$dest"
+          done < kernel-out/FILES.txt
+          ls -lh kernel-out
+        shell: bash
+
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: xnu-kernel-artifacts
-          path: |
-            xnu-source/BUILD/**/*.kernel*
-            xnu-source/BUILD/**/*.dSYM*
-            xnu-source/BUILD/**/*.map
+          path: kernel-out/
           if-no-files-found: warn
